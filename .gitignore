@@ -1,0 +1,89 @@
+# =============================================================================
+# Python
+# =============================================================================
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# =============================================================================
+# 모델 가중치 (대용량 — GitHub 100MB 제한 초과)
+#
+#   pytorch_model.bin  4.3 GB  (DF-Arena 1B)
+#   Cnn14_mAP=0.431.pth  313 MB  (PANNs)
+#   955717e8-8726e21a.th  81 MB  (HTDemucs)
+#
+# 재현 방법: baseline_submit.zip 원본을 팀 내 공유 스토리지에서 받거나
+#           대회 페이지 배포본을 사용. SHA256SUMS.txt로 무결성 확인 가능.
+# =============================================================================
+*.bin
+*.pth
+*.th
+*.pt
+*.ckpt
+*.safetensors
+
+# baseline_submit.zip 자체도 4.3 GB
+baseline_submit.zip
+
+# submit.zip — 제출용 최종 패키지 (모델 가중치 포함으로 4.3 GB)
+submit.zip
+
+# =============================================================================
+# 오디오 데이터 (학습용 원본 및 HTDemucs 분리 결과물)
+# .gitkeep 파일은 빈 디렉토리 구조를 추적하기 위해 유지
+# =============================================================================
+# 학습 원본
+music_fake_pipeline/music_fake_pipeline/data/raw/real_music/*
+music_fake_pipeline/music_fake_pipeline/data/raw/fake_music/*
+!music_fake_pipeline/music_fake_pipeline/data/raw/real_music/.gitkeep
+!music_fake_pipeline/music_fake_pipeline/data/raw/fake_music/.gitkeep
+
+# HTDemucs 분리 결과물 (.npy)
+music_fake_pipeline/music_fake_pipeline/data/separated/real/*
+music_fake_pipeline/music_fake_pipeline/data/separated/fake/*
+!music_fake_pipeline/music_fake_pipeline/data/separated/real/.gitkeep
+!music_fake_pipeline/music_fake_pipeline/data/separated/fake/.gitkeep
+
+# manifest (prepare_data.py 실행 시 자동 생성)
+music_fake_pipeline/music_fake_pipeline/data/manifests/*.csv
+!music_fake_pipeline/music_fake_pipeline/data/manifests/.gitkeep
+
+# =============================================================================
+# 학습 산출물
+# =============================================================================
+# 체크포인트 (*.pt 규칙으로 이미 커버되지만 디렉토리 단위로도 명시)
+music_fake_pipeline/music_fake_pipeline/checkpoints/*
+!music_fake_pipeline/music_fake_pipeline/checkpoints/.gitkeep
+
+# 학습 로그
+music_fake_pipeline/music_fake_pipeline/logs/*
+!music_fake_pipeline/music_fake_pipeline/logs/.gitkeep
+
+# 제출용 내보내기 산출물 (weights.pt + music_fake_infer.py)
+music_fake_pipeline/music_fake_pipeline/export/*
+!music_fake_pipeline/music_fake_pipeline/export/.gitkeep
+
+# =============================================================================
+# 추론 결과물
+# =============================================================================
+output/
+
+# =============================================================================
+# IDE / 에디터
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =============================================================================
+# OS
+# =============================================================================
+.DS_Store
+Thumbs.db

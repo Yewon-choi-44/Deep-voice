@@ -1,0 +1,23 @@
+# 로컬 개발/학습 환경용 (uv 기준). 평가 서버의 사양 문서에 명시된 버전을
+# 그대로 고정합니다. 특히 demucs는 4.0.1과 4.1.0 사이에 호환되지 않는
+# API 변경(demucs.separate.load_track 제거)이 있어, 버전을 반드시 맞춰야
+# baseline_submit/script.py 및 이 프로젝트의 demucs_separate.py가 동작합니다.
+# (README.md의 "반드시 알아야 할 버전 함정" 항목 참고)
+
+torch==2.7.1
+torchaudio==2.7.1
+
+pandas==2.0.3
+numpy==1.26.4
+scipy==1.15.3
+scikit-learn==1.8.0
+
+librosa==0.10.2.post1
+soundfile==0.12.1
+soxr==0.5.0.post1
+demucs==4.0.1
+panns-inference==0.1.1
+torchlibrosa==0.1.0
+julius==0.2.7
+
+tqdm==4.66.4
