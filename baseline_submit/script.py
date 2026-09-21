@@ -1,5 +1,29 @@
 #!/usr/bin/env python3
-"""경진대회 테스트 데이터에 대한 5개 확률값을 생성한다."""
+"""경진대회 테스트 데이터에 대한 5개 확률값을 생성한다.
+
+[수정 사항] baseline 대비 유일한 변경점:
+    MUSIC_FAKE_PROB 계산에 DF-Arena 1B(음성 전용으로 검증된 모델) 대신,
+    REAL/FAKE 음악으로 별도 학습한 소형 CNN(music_classifier)을 사용한다.
+    VOICE_FAKE_PROB, VOICE_PRESENT_PROB, MUSIC_PRESENT_PROB 계산 경로와
+    HTDemucs 분리, MAX Fusion 결합 로직은 baseline과 완전히 동일하다.
+
+    변경된 아키텍처:
+        INPUT AUDIO
+        |
+        +-- PANNs Cnn14                                (변경 없음)
+        |   +-- VOICE_PRESENT_PROB (VP)
+        |   +-- MUSIC_PRESENT_PROB (MP)
+        |
+        +-- HTDemucs                                    (변경 없음)
+            +-- vocals --------> DF-Arena 1B        --> VOICE_FAKE_PROB (VF)   (변경 없음)
+            +-- accompaniment -> music_classifier(신규) --> MUSIC_FAKE_PROB (MF)  <- 변경
+
+        VP x VF  --> Voice Risk --+
+                                   +--> MAX Fusion --> FILE_FAKE_PROB          (변경 없음)
+        MP x MF  --> Music Risk --+
+
+    변경 표시는 "# >>> CHANGED" 주석으로 구분해두었다.
+"""
 
 import argparse
 import csv
@@ -25,12 +49,16 @@ from tqdm import tqdm
 
 
 # 경로 설정
-BASE_DIR = Path(__file__).resolve().parent
-print(f"{BASE_DIR}")
+try:
+    BASE_DIR = Path(__file__).resolve().parent
+except NameError:
+    # Jupyter에서는 현재 작업 폴더를 노트북 기준 경로로 사용한다.
+    BASE_DIR = Path.cwd()
 MODEL_DIR = BASE_DIR / "model"
 DF_ARENA_DIR = MODEL_DIR / "df_arena_1b"
 HTDEMUCS_DIR = MODEL_DIR / "htdemucs"
 PANNS_DIR = MODEL_DIR / "panns"
+MUSIC_CLASSIFIER_DIR = MODEL_DIR / "music_classifier"  # >>> CHANGED: 신규 음악 분류기 경로
 
 DEFAULT_TEST_DIR = Path("data") / "test"
 DEFAULT_SAMPLE_SUBMISSION = Path("data") / "sample_submission.csv"
@@ -56,10 +84,10 @@ SUPPORTED_AUDIO_EXTENSIONS = {
 
 
 # -----------------------------------------------------------------------------
-# 1. 입력 파일 및 제출 양식 확인
+# 1. 입력 파일 및 제출 양식 확인 (변경 없음)
 # -----------------------------------------------------------------------------
 
-def parse_arguments():
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(
         description="Run the zero-shot audio deepfake baseline."
     )
@@ -69,7 +97,7 @@ def parse_arguments():
     )
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT_PATH)
     parser.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def select_device(device_name):
@@ -152,7 +180,7 @@ def load_audio(audio_path):
 
 
 # -----------------------------------------------------------------------------
-# 2. 오디오 구간 분할
+# 2. 오디오 구간 분할 (변경 없음)
 # -----------------------------------------------------------------------------
 
 def get_segment_starts(audio_length):
@@ -177,7 +205,7 @@ def extract_segment(audio, start):
 
 
 # -----------------------------------------------------------------------------
-# 3. PANNs를 이용한 음성·음악 존재 여부 추론
+# 3. PANNs를 이용한 음성·음악 존재 여부 추론 (변경 없음)
 # -----------------------------------------------------------------------------
 
 def prepare_panns_labels():
@@ -243,7 +271,7 @@ def predict_presence_for_all_files(audio_files, device):
 
 
 # -----------------------------------------------------------------------------
-# 4. HTDemucs를 이용한 음성·음악 분리
+# 4. HTDemucs를 이용한 음성·음악 분리 (변경 없음)
 # -----------------------------------------------------------------------------
 
 def load_htdemucs_model():
@@ -310,7 +338,8 @@ def separate_voice_and_music(audio_path, model, device):
 
 
 # -----------------------------------------------------------------------------
-# 5. DF-Arena 1B를 이용한 성분별 Fake 추론
+# 5. DF-Arena 1B (Voice) / music_classifier (Music) 를 이용한 성분별 Fake 추론
+#    >>> CHANGED: Music 경로만 신규 분류기로 교체
 # -----------------------------------------------------------------------------
 
 def load_df_arena_model(device):
@@ -334,11 +363,23 @@ def load_df_arena_model(device):
     return model, fake_label_index
 
 
+# >>> CHANGED: 신규 음악 분류기 로더. model/music_classifier/music_fake_infer.py 를 불러온다.
+def load_music_classifier_model(device):
+    if str(MUSIC_CLASSIFIER_DIR) not in sys.path:
+        sys.path.insert(0, str(MUSIC_CLASSIFIER_DIR))
+    import music_fake_infer  # model/music_classifier/music_fake_infer.py
+
+    weights_path = MUSIC_CLASSIFIER_DIR / "weights.pt"
+    model = music_fake_infer.load_music_fake_model(weights_path, device)
+    return model, music_fake_infer
+
+
 def calculate_rms(audio):
     return float(np.sqrt(np.mean(np.square(audio, dtype=np.float64))))
 
 
 def predict_fake(model, fake_label_index, audio, device):
+    """DF-Arena 전용 (Voice 경로). 변경 없음."""
     if calculate_rms(audio) < SILENCE_RMS:
         return 0.0
 
@@ -356,7 +397,7 @@ def predict_fake(model, fake_label_index, audio, device):
 
 
 # -----------------------------------------------------------------------------
-# 6. 파일 단위 점수 계산 및 제출 파일 저장
+# 6. 파일 단위 점수 계산 및 제출 파일 저장 (결합 로직은 변경 없음)
 # -----------------------------------------------------------------------------
 
 def combine_file_fake_score(voice_fake, music_fake, voice_present, music_present):
@@ -370,6 +411,7 @@ def predict_fake_scores_for_all_files(
 ):
     df_arena_model, fake_label_index = load_df_arena_model(device)
     htdemucs_model = load_htdemucs_model()
+    music_classifier_model, music_fake_infer = load_music_classifier_model(device)  # >>> CHANGED
 
     for index, audio_path in enumerate(tqdm(audio_files, desc="Components")):
         voice_audio, music_audio = separate_voice_and_music(
@@ -378,8 +420,9 @@ def predict_fake_scores_for_all_files(
         voice_fake = predict_fake(
             df_arena_model, fake_label_index, voice_audio, device
         )
-        music_fake = predict_fake(
-            df_arena_model, fake_label_index, music_audio, device
+        # >>> CHANGED: DF-Arena 대신 신규 music_classifier 사용
+        music_fake = music_fake_infer.predict_music_fake(
+            music_classifier_model, music_audio, device
         )
 
         voice_present, music_present = presence_scores[audio_path.stem]
@@ -406,7 +449,7 @@ def save_submission(output_path, column_names, rows):
 
 
 def main():
-    args = parse_arguments()
+    args = parse_arguments([])
     device = select_device(args.device)
 
     # 1. 테스트 파일을 제출 양식의 ID 순서에 맞춘다.
