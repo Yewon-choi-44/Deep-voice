@@ -174,3 +174,184 @@ uv run export_for_submit.py --checkpoint checkpoints/music_classifier_best.pt
   가중치가 없어 synthetic 데이터로만 검증함)
 - 실제 대회 데이터에서의 Music EER 개선 폭
 - 평가 서버 환경에서의 실행 시간/용량
+
+---
+
+## 9. 트러블슈팅 및 실제 실행 기록 (2026-09-20 ~ 21, 추후 정리 예정)
+
+> 아래는 실제 환경에서 파이프라인을 처음 돌리면서 마주친 문제와 수정 사항을 날것으로 기록한 섹션입니다.
+> 위 섹션들의 내용을 수정하지 않고 누적식으로 추가합니다.
+
+---
+
+### 9-1. 실제 환경 사양
+
+| 항목 | 내용 |
+|---|---|
+| OS | Windows 11 Pro for Workstations |
+| Python | 3.13.2 (시스템 설치, `C:\Users\AI-00\AppData\Local\Programs\Python\Python313\`) |
+| GPU | NVIDIA Quadro RTX 5000 (VRAM 16GB) |
+| NVIDIA 드라이버 | 596.71 |
+| CUDA 드라이버 버전 | 13.2 (드라이버가 지원하는 최대 CUDA 버전) |
+| PyTorch 빌드 | `2.11.0+cu128` (CUDA 12.8 휠) |
+
+→ 2번 섹션의 `torch==2.7.1+cu128`, `uv venv --python 3.11` 내용은 실제 환경 기준으로 아직 업데이트되지 않음.
+
+---
+
+### 9-2. PyTorch CUDA 설치 삽질
+
+**문제:** `pip install torch` 또는 `uv pip install torch`를 아무 옵션 없이 실행하면
+PyPI에서 CPU 전용 빌드(`2.11.0+cpu`)가 설치된다. `nvidia-smi`가 정상이어도
+`torch.cuda.is_available()`이 `False`를 반환한다.
+
+**원인:** PyTorch CUDA 빌드는 2~3GB라 PyPI 100MB 제한을 초과한다.
+PyTorch 팀이 별도 휠 서버(`download.pytorch.org/whl/`)를 운영하며, PyPI에는 CPU 버전만 올라와 있다.
+
+**해결:**
+```bash
+pip install torch==2.11.0+cu128 torchaudio==2.11.0+cu128 \
+    --index-url https://download.pytorch.org/whl/cu128
+```
+
+uv를 사용한다면 `--index-url` 대신 `pyproject.toml`에 인덱스를 등록해두면
+이후 `uv sync` 한 번으로 끝난다 (9-3 참고).
+
+**CUDA 버전 선택 기준:** `nvidia-smi` 우측 상단의 `CUDA Version`은 드라이버가
+지원하는 최대 버전이다. 그보다 낮은 CUDA 빌드는 전부 호환된다.
+(이 환경: 드라이버 13.2 → `cu128` 정상 동작 확인)
+
+**확인 방법:** `python cuda_check.py` (프로젝트 루트 `Deep_voice/`에 작성됨)
+
+---
+
+### 9-3. pyproject.toml 생성 및 uv 설정
+
+`requirements-dev.txt`와 병행하여 `pyproject.toml`을 생성했다.
+`torch`/`torchaudio`의 CUDA 인덱스를 여기에 등록해두면 `uv sync` 한 번으로
+전체 환경이 재현된다.
+
+```toml
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+```
+
+**새 환경 세팅 순서 (현재 권장):**
+```bash
+# 1. nvidia-smi 로 드라이버/CUDA 버전 확인
+nvidia-smi
+
+# 2. 가상환경 생성
+uv venv
+
+# 3. 전체 의존성 설치 (torch는 자동으로 cu128 버전으로 설치됨)
+uv sync
+
+# 4. GPU 연결 확인
+python ../../cuda_check.py
+```
+
+---
+
+### 9-4. yt-dlp 및 ffmpeg 미설치 문제
+
+`download_musiccaps.py`의 docstring에 필수 조건으로 명시되어 있지만,
+`requirements-dev.txt`에 빠져 있었다. 또한 `ffmpeg`은 Python 패키지가 아니라
+시스템 바이너리라 별도 설치가 필요하다.
+
+**설치 방법:**
+```bash
+# yt-dlp (Python 패키지)
+pip install yt-dlp
+
+# ffmpeg (시스템 바이너리, Windows)
+winget install Gyan.FFmpeg
+# 설치 후 터미널 재시작 필요 (PATH 반영)
+```
+
+`pyproject.toml`과 `requirements-dev.txt`에 `yt-dlp`, `datasets[audio]`는 이미 추가됨.
+ffmpeg은 시스템 설치라 패키지 목록에는 포함할 수 없으므로 이 문서에만 기록.
+
+---
+
+### 9-5. download_musiccaps.py 수정 이력
+
+**수정 1 — data_dir 절대 경로 고정**
+
+원본의 `'./music_data'` (CWD 기준 상대 경로)를 스크립트 위치 기준으로 고정:
+```python
+# 수정 전
+'./music_data'
+
+# 수정 후
+Path(__file__).parent / 'data' / 'raw' / 'real_music'
+```
+이전에는 실행 디렉토리에 따라 저장 위치가 달라져서 `Deep_voice/music_data/`에 빈 디렉토리만 생긴 적 있음.
+
+**수정 2 — cast_column 제거**
+
+```python
+# 제거된 코드
+.cast_column('audio', Audio(sampling_rate=sampling_rate))
+```
+`datasets` 최신 버전(4.8.5)에서 `Audio` 디코딩 시 `torchcodec`이 필요한데,
+파일을 디스크에 저장하는 게 목적인 이 스크립트에서는 불필요한 단계였다.
+`from datasets import load_dataset, Audio` → `from datasets import load_dataset`로 수정.
+
+---
+
+### 9-6. 실제 데이터 현황 및 클래스 불균형
+
+**MusicCaps (REAL):**
+- 전체 5,521개 클립이지만 YouTube에서 삭제된 영상이 많아 실제 다운로드 가능한 수: **약 150개**
+- 파일명은 YouTube 영상 ID (`-0Gj8-vB1q4.wav` 형태)
+
+**FakeMusicCaps (FAKE):**
+- 5개 생성기, 총 55,216개 클립 (`data/raw/fake_music/FakeMusicCaps/` 하위에 생성기별 폴더로 구성)
+
+**클래스 불균형 대응:**
+- `train.py`에 `pos_weight` 등 class weight 처리가 없음
+- 이 상태에서 fake 55,216개를 그대로 쓰면 모델이 무조건 "fake"만 예측하도록 학습됨
+- **현재 권장**: `prepare_data.py` 실행 시 `--limit 150`으로 클래스 균형 맞추기
+  (real 150개 + fake 150개 = 총 300개)
+- 추후 개선 방향: `train.py`에 `pos_weight` 추가 후 더 많은 fake 데이터 활용
+
+---
+
+### 9-7. 실제 실행 명령 (2026-09-21 기준)
+
+**준비:**
+```bash
+# 실행 위치
+cd D:\wiki\wiki\wiki\projects\Deep_voice\music_fake_pipeline\music_fake_pipeline
+```
+
+**데이터 다운로드 (MusicCaps REAL):**
+```bash
+python download_musiccaps.py
+# 이미 받은 파일은 자동으로 건너뜀 (재실행 안전)
+```
+
+**데이터 준비 (HTDemucs 분리 + manifest 생성):**
+```bash
+python prepare_data.py \
+    --htdemucs-dir ../../baseline_submit/model/htdemucs \
+    --device cuda \
+    --limit 150
+```
+
+**학습:**
+```bash
+python train.py --device cuda
+```
+
+**평가:**
+```bash
+python evaluate.py --checkpoint checkpoints/music_classifier_best.pt
+```
