@@ -1,0 +1,47 @@
+[project]
+name = "music-fake-pipeline"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "torch==2.11.0+cu128",
+    "torchaudio==2.11.0+cu128",
+
+    "pandas==2.0.3",
+    "numpy==1.26.4",
+    "scipy==1.15.3",
+    "scikit-learn==1.8.0",
+
+    "librosa==0.10.2.post1",
+    "soundfile==0.12.1",
+    "soxr==0.5.0.post1",
+    "demucs==4.0.1",
+    "panns-inference==0.1.1",
+    "torchlibrosa==0.1.0",
+    "julius==0.2.7",
+
+    "tqdm==4.66.4",
+
+    # MusicCaps 다운로드용 (ffmpeg은 별도 시스템 설치 필요: winget install Gyan.FFmpeg)
+    "yt-dlp",
+    "datasets[audio]",
+]
+
+# =============================================================================
+# demucs 4.0.1 vs 4.1.0 API 단절 주의
+#   - 4.1.0에서 demucs.separate.load_track 제거됨
+#   - baseline_submit/script.py 및 demucs_separate.py 는 4.0.1 API 기준
+# =============================================================================
+
+[tool.uv]
+# torch / torchaudio 는 PyPI가 아닌 PyTorch CUDA 휠 서버에서 받아야 함
+# PyPI 기본 설치 시 CPU 전용 빌드(+cpu)가 받아짐
+index-strategy = "unsafe-best-match"
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }

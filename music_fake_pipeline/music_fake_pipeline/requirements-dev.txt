@@ -4,8 +4,8 @@
 # baseline_submit/script.py 및 이 프로젝트의 demucs_separate.py가 동작합니다.
 # (README.md의 "반드시 알아야 할 버전 함정" 항목 참고)
 
-torch==2.7.1
-torchaudio==2.7.1
+torch==2.11.0+cu128
+torchaudio==2.11.0+cu128
 
 pandas==2.0.3
 numpy==1.26.4
@@ -21,3 +21,7 @@ torchlibrosa==0.1.0
 julius==0.2.7
 
 tqdm==4.66.4
+
+# MusicCaps 다운로드용 (ffmpeg은 별도 시스템 설치 필요: winget install Gyan.FFmpeg)
+yt-dlp
+datasets[audio]
