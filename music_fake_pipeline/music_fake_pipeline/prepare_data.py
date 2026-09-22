@@ -17,6 +17,10 @@
        부풀려지는 data leakage가 발생함)
     5. data/manifests/train.csv, val.csv 생성 (columns: path,label,source)
 
+이미 분리가 끝난 파일(data/separated/{real,fake}/*.npy가 이미 존재)은 재실행 시
+건너뛴다 — 원본 데이터를 나중에 추가한 경우, 전체를 다시 돌려도 새로 추가된
+파일만 실제로 처리된다.
+
 사용 예:
     uv run prepare_data.py --htdemucs-dir /path/to/baseline_submit/model/htdemucs
     uv run prepare_data.py --skip-demucs --limit 50   # 빠른 파이프라인 점검용
@@ -88,6 +92,17 @@ def process_class(
     skipped = []
     for raw_path in tqdm(raw_files, desc=f"{label_name} (label={label})"):
         out_path = out_dir / f"{raw_path.stem}.npy"
+
+        # 이미 분리(HTDemucs)까지 끝낸 파일은 다시 처리하지 않는다 — 이 스크립트를
+        # 반복 실행할 때(예: 원본 데이터를 나중에 더 추가한 경우) 이미 끝난 파일까지
+        # 매번 다시 분리하면 시간이 크게 낭비된다. manifest에는 계속 포함시켜야
+        # 하므로 records에는 추가한다.
+        if out_path.exists():
+            records.append(
+                {"path": str(out_path), "label": label, "source": raw_path.name}
+            )
+            continue
+
         try:
             if skip_demucs:
                 music_audio = audio_utils.load_audio(raw_path)

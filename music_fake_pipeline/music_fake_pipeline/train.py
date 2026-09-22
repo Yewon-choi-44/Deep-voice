@@ -15,17 +15,18 @@
 """
 
 import argparse
-import csv
 import time
 from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 import config
 from dataset import MusicManifestDataset
 from evaluate import evaluate_manifest
 from model import MusicFakeClassifier, count_parameters
+from run_logger import RunLogger
 
 
 def parse_arguments():
@@ -45,11 +46,13 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def train_one_epoch(model, loader, optimizer, criterion, device) -> float:
+def train_one_epoch(model, loader, optimizer, criterion, device, epoch=None, total_epochs=None) -> float:
     model.train()
     total_loss, n_samples = 0.0, 0
 
-    for mels, labels in loader:
+    desc = f"Training (epoch {epoch}/{total_epochs})" if epoch is not None else "Training"
+    progress = tqdm(loader, desc=desc)
+    for mels, labels in progress:
         mels = mels.to(device)
         labels = labels.to(device)
 
@@ -62,6 +65,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device) -> float:
         batch_size = labels.size(0)
         total_loss += loss.item() * batch_size
         n_samples += batch_size
+        progress.set_postfix(loss=f"{total_loss / n_samples:.4f}")
 
     return total_loss / max(1, n_samples)
 
@@ -127,17 +131,15 @@ def main():
         best_eer = state.get("val_eer", float("inf"))
         print(f"체크포인트에서 재개: epoch={start_epoch}, best_eer={best_eer:.4f}")
 
-    config.LOG_DIR.mkdir(parents=True, exist_ok=True)
-    log_path = config.LOG_DIR / "train_log.csv"
-    log_is_new = not log_path.exists()
-    log_file = log_path.open("a", encoding="utf-8", newline="")
-    log_writer = csv.writer(log_file)
-    if log_is_new:
-        log_writer.writerow(["epoch", "train_loss", "val_eer", "elapsed_sec"])
+    logger = RunLogger()
+    print(f"이번 실행 로그: {logger.path}")
 
     for epoch in range(start_epoch, args.epochs + 1):
         epoch_start = time.time()
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss = train_one_epoch(
+            model, train_loader, optimizer, criterion, device,
+            epoch=epoch, total_epochs=args.epochs,
+        )
         val_eer, _ = evaluate_manifest(model, args.val_manifest, device)
         scheduler.step(val_eer)  # ReduceLROnPlateau는 감시 대상 지표를 인자로 받는다
         elapsed = time.time() - epoch_start
@@ -148,8 +150,7 @@ def main():
             f"train_loss={train_loss:.4f}  val_eer={val_eer:.4f}  "
             f"lr={current_lr:.2e}  ({elapsed:.1f}s)"
         )
-        log_writer.writerow([epoch, f"{train_loss:.6f}", f"{val_eer:.6f}", f"{elapsed:.1f}"])
-        log_file.flush()
+        logger.log_epoch(epoch, train_loss, val_eer, elapsed)
 
         save_checkpoint(config.LAST_CHECKPOINT, model, optimizer, epoch, val_eer)
 
@@ -167,9 +168,10 @@ def main():
                 )
                 break
 
-    log_file.close()
+    logger.close()
     print(f"\n학습 종료. best val EER = {best_eer:.4f}")
     print(f"체크포인트: {config.BEST_CHECKPOINT}")
+    print(f"이번 실행 로그: {logger.path}")
 
 
 if __name__ == "__main__":

@@ -30,9 +30,11 @@ LAST_CHECKPOINT = CHECKPOINT_DIR / "music_classifier_last.pt"
 EXPORT_DIR = PROJECT_ROOT / "export"  # submit.zip의 model/music_classifier/ 에 그대로 복사할 산출물
 LOG_DIR = PROJECT_ROOT / "logs"
 
-# baseline_submit.zip 압축 해제 위치를 사용자가 알려주면 여기 채워서 씀.
-# prepare_data.py --htdemucs-dir 인자로도 덮어쓸 수 있음.
-BASELINE_SUBMIT_DIR = PROJECT_ROOT.parent / "baseline_submit"
+# baseline_submit/은 Deep_voice/ 바로 아래에 있다 (music_fake_pipeline/의 형제가
+# 아니라 그 부모의 형제) — PROJECT_ROOT가 music_fake_pipeline/music_fake_pipeline/
+# 이므로 두 단계 위로 올라가야 한다. prepare_data.py --htdemucs-dir 인자로도
+# 덮어쓸 수 있음.
+BASELINE_SUBMIT_DIR = PROJECT_ROOT.parent.parent / "baseline_submit"
 HTDEMUCS_MODEL_DIR = BASELINE_SUBMIT_DIR / "model" / "htdemucs"
 
 # -----------------------------------------------------------------------------
