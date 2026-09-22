@@ -7,13 +7,15 @@ prepare_data.py -> train.py -> evaluate.py -> export_for_submit.py 를
 그대로 실행한다 — 즉 torch가 설치된 올바른 venv의 python으로 이 스크립트
 자체를 실행하기만 하면, 나머지 단계도 자동으로 같은 환경을 쓴다.
 
-하나라도 실패(0이 아닌 종료 코드)하면 그 자리에서 즉시 멈춘다. 각 단계에
-세부 옵션을 주고 싶으면(예: --limit, --epochs) 이 스크립트 대신 해당 스크립트를
-개별 실행할 것 — 이 스크립트는 "그냥 기본값으로 전체를 한 번에 돌리는" 용도다.
+하나라도 실패(0이 아닌 종료 코드)하면 그 자리에서 즉시 멈춘다. --limit,
+--skip-prepare 외의 세부 옵션(예: train.py의 --epochs)을 주고 싶으면 이 스크립트
+대신 해당 스크립트를 개별 실행할 것 — 이 스크립트는 "그냥 기본값으로 전체를 한
+번에 돌리는" 용도다.
 
 사용 예:
     python run_pipeline.py
-    python run_pipeline.py --skip-prepare   # data/manifests가 이미 최신이면 prepare_data 생략
+    python run_pipeline.py --skip-prepare       # data/manifests가 이미 최신이면 prepare_data 생략
+    python run_pipeline.py --limit 50           # prepare_data.py --limit 50 으로 빠르게 점검
 """
 
 import argparse
@@ -54,6 +56,12 @@ def parse_arguments():
         action="store_true",
         help="prepare_data.py 단계를 건너뛴다 (data/manifests가 이미 최신일 때)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="prepare_data.py --limit 으로 그대로 전달 (클래스별 처리 파일 수 제한, 디버그용)",
+    )
     return parser.parse_args()
 
 
@@ -62,7 +70,8 @@ def main():
     check_torch_available()
 
     if not args.skip_prepare:
-        run_step("1/4 데이터 준비 (prepare_data.py)", "prepare_data.py")
+        prepare_args = ["--limit", str(args.limit)] if args.limit is not None else []
+        run_step("1/4 데이터 준비 (prepare_data.py)", "prepare_data.py", prepare_args)
     else:
         print("\n[1/4 데이터 준비] --skip-prepare 옵션으로 건너뜀")
 

@@ -3,6 +3,8 @@
 > 주최: 행정안전부 · 한국지능정보사회진흥원 / 주관: 국립과학수사연구원 / 운영: DACON  
 > **리더보드 제출 마감: 2026-09-29 (화) 10:00 KST**
 
+> **브랜치 안내**: `v1` = 2026-09-22 파이프라인 자동화 이전(각 스크립트를 하나씩 수동 실행). `v2` = 학습 진행 게이지, 실행별 로그 분리(`run_logger.py`), 원샷 파이프라인(`run_pipeline.py`), `prepare_data.py` 증분 처리, 경로 버그 수정까지 반영된 현재 버전 — 이 문서는 `v2` 기준으로 작성됨. 상세 변경 이력은 `dev_log.md` 참고.
+
 ---
 
 ## 목차
@@ -217,10 +219,13 @@ Deep_voice/
 │       ├── features.py
 │       ├── model.py                  # MusicFakeClassifier
 │       ├── dataset.py
-│       ├── prepare_data.py
-│       ├── train.py
+│       ├── prepare_data.py           # v2: 이미 분리 끝난 파일은 재실행 시 건너뜀
+│       ├── train.py                  # v2: 학습 진행 게이지, run_logger 사용
 │       ├── evaluate.py
 │       ├── export_for_submit.py
+│       ├── run_logger.py             # v2 신규: 실행별 logs/{시각}.csv 로그 생성
+│       ├── run_pipeline.py           # v2 신규: prepare→train→evaluate→export 원샷 실행
+│       ├── SUBMIT_INTEGRATION.md     # 제출 파일 구성 상세 절차
 │       ├── patched_script.py         # 최종 제출용 script.py
 │       ├── requirements-dev.txt
 │       └── data/
@@ -289,6 +294,24 @@ scikit-learn==1.8.0     scipy==1.15.3
 
 `music_fake_pipeline/music_fake_pipeline/` 디렉토리 안에서 실행한다.
 
+### Step 0 — 원샷 실행 (v2, 권장)
+
+아래 Step 1~4를 매번 하나씩 따로 실행하기 번거롭다면, `run_pipeline.py` 하나로
+기본값 그대로 전체를 순서대로 실행할 수 있다:
+
+```bash
+# 반드시 프로젝트 루트 .venv(torch 포함)의 python으로 실행할 것
+../../.venv/bin/python3 run_pipeline.py
+
+# data/manifests가 이미 최신이라 데이터 준비를 건너뛰고 싶을 때
+../../.venv/bin/python3 run_pipeline.py --skip-prepare
+```
+
+`prepare_data.py`(증분 처리 — 이미 끝난 파일은 건너뜀) → `train.py` → `evaluate.py`
+→ `export_for_submit.py`를 이어서 실행하고, 한 단계라도 실패하면 즉시 멈춘다.
+세부 옵션(`--epochs`, `--limit` 등)을 조정하고 싶으면 아래 Step 1~4처럼 해당
+스크립트를 개별 실행한다.
+
 ### Step 1 — 데이터 준비
 
 `data/raw/real_music/`과 `data/raw/fake_music/`에 오디오 파일을 채워 넣은 뒤:
@@ -303,6 +326,7 @@ python prepare_data.py --skip-demucs --limit 20
 
 - train/val 분할은 **원본 파일(트랙) 단위** — 세그먼트 단위 분할 시 data leakage 발생
 - `data/manifests/train.csv`, `val.csv` 생성됨
+- v2부터는 **이미 HTDemucs 분리가 끝난 파일은 재실행 시 건너뛴다** — 원본 데이터를 나중에 추가했을 때, 전체를 다시 돌려도 새로 추가된 파일만 실제로 처리됨
 
 ### Step 2 — 학습
 
@@ -313,7 +337,9 @@ python train.py --epochs 30 --batch-size 32 --device cuda
 ```
 
 - val EER 기준으로 best checkpoint(`checkpoints/music_classifier_best.pt`) 갱신
-- `EARLY_STOP_PATIENCE = 6` epoch 동안 개선 없으면 자동 종료
+- `EARLY_STOP_PATIENCE = 10` epoch 동안 개선 없으면 자동 종료 (실측 데이터 기반 산정 근거는 `dev_log.md` 참고)
+- LR 스케줄러는 `ReduceLROnPlateau` — val EER이 정체되면 LR을 자동으로 절반씩 낮춤 (`CosineAnnealingLR`은 조기 종료와 구조적으로 맞지 않아 v2에서 교체함)
+- v2부터는 학습 진행 게이지(tqdm)가 매 epoch의 배치 진행률과 실시간 평균 loss를 보여주고, 실행마다 `logs/{실행 시각}.csv`에 별도로 기록됨 (epoch, train_loss, val_eer, elapsed_sec)
 
 ### Step 3 — 평가
 

@@ -11,6 +11,8 @@ status: active
 
 > **리더보드 제출 마감: 2026-09-29 (화) 10:00 KST** — 최신 갱신 시점(2026-09-22) 기준 **D-7**
 
+> **브랜치 안내**: `v1` = 2026-09-22 파이프라인 자동화 이전까지의 모든 내용(수동으로 `prepare_data.py`→`train.py`→`evaluate.py`→`export_for_submit.py`를 하나씩 실행하던 시절, `CosineAnnealingLR`+`patience=6`). `v2` = 학습 진행 게이지, 실행별 로그 분리(`run_logger.py`), 원샷 파이프라인(`run_pipeline.py`), `ReduceLROnPlateau`+`patience=10`, `prepare_data.py` 증분 처리, `config.py` 경로 버그 수정까지 반영된 현재 버전.
+
 ---
 
 ## 진행 이력
@@ -170,6 +172,21 @@ status: active
 - **비용-이득 비교**: epoch당 약 3분. patience를 늘리는 비용(6→10 시 최대 +4 epoch ≈ 12분)은 작은데, patience가 부족해 조기종료되면 학습 런 전체를 날리는 손실이 훨씬 큼 — 비대칭 구조상 낮추기보다 올리는 쪽이 안전
 - **결정**: `config.py`의 `EARLY_STOP_PATIENCE`를 6 → **10**으로 상향 (관측된 최대 정체 구간 5의 2배 여유). 연동되어 있는 `ReduceLROnPlateau`의 patience(`args.patience//2`)도 자동으로 3→5로 조정됨
 
+#### ✅ 파이프라인 자동화 (v1 → v2) — 사용자 요청 3건 일괄 반영
+
+> **브랜치 안내**: 여기서부터의 변경은 `v2` 브랜치에 있음. 그 이전까지의 모든 내용(§09-20~09-22 위 항목 전체, `CosineAnnealingLR`+patience=6 시절의 체크포인트 등)은 `v1` 브랜치에 고정되어 있음.
+
+일일이 스크립트를 하나씩 확인하며 실행하기 번거롭다는 문제 제기에 따라 3가지를 구현:
+
+1. **`run_logger.py` (신규)** — 학습 1회 실행마다 `logs/{YYYYMMDD_HHMMSS}.csv`로 별도 로그 파일 생성(epoch, train_loss, val_eer, elapsed_sec). 기존에는 `logs/train_log.csv` 하나에 모든 실행이 계속 이어 붙어서, 이번 대화에서 patience 근거를 분석할 때도 "epoch 번호가 1로 리셋되는 지점"을 보고 실행 경계를 추측해야 했음 — 이제는 파일명 자체로 실행이 구분됨.
+2. **`train.py` 학습 진행 게이지** — `evaluate.py`의 "Evaluating" tqdm 게이지처럼, `train_one_epoch()`의 배치 루프에도 tqdm을 추가해 현재 epoch 진행률과 실시간 평균 loss를 보여줌.
+3. **`run_pipeline.py` (신규)** — `prepare_data.py` → `train.py` → `evaluate.py` → `export_for_submit.py`를 기본값으로 순서대로 실행하는 원샷 스크립트. `sys.executable`을 그대로 하위 프로세스에 넘겨써서, 이 스크립트만 올바른 venv(프로젝트 루트 `.venv`, torch 포함)의 python으로 실행하면 나머지 단계도 같은 환경을 씀. torch 미설치 시 명확한 안내 메시지 출력, 한 단계라도 실패하면 즉시 중단.
+
+**원샷 파이프라인을 실제로 굴리면서 드러난 두 가지 기존 버그도 함께 수정**:
+
+- `prepare_data.py`가 재실행 시 **이미 HTDemucs 분리가 끝난 파일까지 매번 처음부터 다시 처리**하고 있었음 (skip 로직 없음). Real 원본이 18,636개까지 늘었는데 이 중 2,016개만 분리된 상태라, 나머지를 마저 처리하려면 이 비효율이 치명적 — `out_path.exists()`면 재처리 없이 manifest에만 포함하도록 수정
+- 사용자가 `run_pipeline.py`를 직접 실행하다 `FileNotFoundError: HTDemucs 모델 경로를 찾을 수 없습니다`를 마주침 — 원인은 `config.py`의 `BASELINE_SUBMIT_DIR = PROJECT_ROOT.parent / "baseline_submit"`가 애초에 잘못 계산되고 있었던 것(`baseline_submit/`은 `music_fake_pipeline/`의 형제가 아니라 `Deep_voice/`(한 단계 더 위) 바로 아래에 있음). 지금까지는 모든 문서·실행 예시가 `--htdemucs-dir`을 매번 명시적으로 지정해서 이 기본값 버그가 드러나지 않았음 — `PROJECT_ROOT.parent.parent`로 수정
+
 ---
 
 ## 현재 상태
@@ -178,12 +195,12 @@ status: active
 |------|------|------|
 | 대회 규정 분석 | ✅ 완료 | |
 | baseline 코드 분석 | ✅ 완료 | script.py는 zip에서 별도 추출 필요 |
-| music_fake_pipeline 구현 | ✅ 완료 (실제 데이터 학습까지 진행) | |
+| music_fake_pipeline 구현 | ✅ 완료 (v2: 원샷 파이프라인 `run_pipeline.py`까지 구축) | |
 | README.md | ✅ 완료 (로컬 환경은 pipeline README 9장 참고) | |
 | **FakeMusicCaps (Fake 샘플)** | ✅ 확보 완료 | 55,216개, 생성기 5종 |
 | **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps 150 + mtg-jamendo 다수) | 원본 18,636개까지 확대, 이 중 분리 완료 2,016개 |
 | **Real 음악 추가 확보 (mtg-jamendo-dataset)** | ✅ 해결 완료 | `setuptools` 빌드 오류 해결, 트랙 다운로드 정상 진행 중 |
-| HTDemucs 분리 (prepare_data) | 🔄 진행 중 | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료, 나머지 미처리 |
+| HTDemucs 분리 (prepare_data) | 🔄 진행 중 (v2: 증분 처리 지원) | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료. `prepare_data.py`가 이제 이미 끝난 파일은 건너뛰므로, 그냥 다시 돌리면 나머지 16,620개만 처리됨 |
 | 모델 학습 (train) | ✅ 완료 (18:44~19:57) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 23에서 조기 종료, best val EER 5.33%(epoch 17) |
 | 평가 (evaluate) | ⚠️ 부분 완료 | val EER 기준 확인, 리더보드 실측 결과는 아직 없음 |
 | submit.zip 통합 및 제출 | 🔄 2회 제출 완료 + 3번째 준비 완료 (09-20 baseline 0.6909, 09-21 `music_classifier` 0.6722, 09-22 확대 데이터 재학습분 — 제출 후 결과 대기) | mtg-jamendo로 데이터 다양성을 늘린 뒤 재학습한 체크포인트(val EER 5.33%)로 3번째 제출 준비 완료. `parse_arguments([])` CLI 인자 무시 버그 발견·수정, 스모크 테스트 통과 |
@@ -201,7 +218,7 @@ status: active
 - [x] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 → 설치 성공, 트랙 다운로드 정상 진행
 - [x] Real 음악을 MusicCaps 150개보다 다양하게 확대 (mtg-jamendo, 원본 18,636개까지 확보)
 - [x] Real:Fake 1,700:1,700 균형 데이터로 재학습 — epoch 23에서 조기 종료, best val EER 5.33%(epoch 17)
-- [ ] 확대된 Real 원본(18,636개) 중 아직 HTDemucs 미분리 상태인 나머지도 `prepare_data.py`로 마저 처리 — 현재는 2,016개만 분리 완료
+- [ ] 확대된 Real 원본(18,636개) 중 아직 HTDemucs 미분리 상태인 나머지도 `prepare_data.py`로 마저 처리 — 현재는 2,016개만 분리 완료. v2부터는 이미 끝난 파일을 건너뛰므로 그냥 `run_pipeline.py`(또는 `prepare_data.py` 단독)를 다시 돌리면 됨
 - [ ] Fake 음악도 FakeMusicCaps 5개 생성기 외 추가 확보 검토 (Echoes 등 — 생성기 다양성 확대가 목적, 단순 개수 증가는 아님)
 - [ ] 각 데이터셋 라이선스 조항 최종 확인 (FakeMusicCaps CC-BY-NC-4.0, mtg-jamendo 등, 대회 "규칙" 탭 기준) — 아직 미완료
 
@@ -220,7 +237,8 @@ status: active
 
 - [x] `CosineAnnealingLR`(T_max=100) vs `EARLY_STOP_PATIENCE=6` 조기 종료 간 불일치 수정 → `ReduceLROnPlateau`로 교체 (`train.py`)
 - [x] `EARLY_STOP_PATIENCE` 근거 재검토 — `train_log.csv` 실측 기반으로 6 → 10 상향 (위 "patience 값을 실측 데이터 기반으로 재산정" 참고)
-- [ ] 새 스케줄러(`ReduceLROnPlateau`) + 새 patience(10)로 재학습해서 기존 결과(val EER 5.33%, `CosineAnnealingLR`+patience=6 방식)와 비교
+- [ ] 새 스케줄러(`ReduceLROnPlateau`) + 새 patience(10)로 재학습해서 기존 결과(val EER 5.33%, `CosineAnnealingLR`+patience=6 방식)와 비교 — v2의 `run_pipeline.py` 한 번으로 데이터 증분 처리부터 export까지 한 번에 가능
+- [x] 원샷 파이프라인(`run_pipeline.py`) + 실행별 로그 분리(`run_logger.py`) + 학습 진행 게이지 구축, `prepare_data.py` 증분 처리·`config.py` 경로 버그 수정 (위 "파이프라인 자동화 (v1 → v2)" 참고)
 - [ ] 하이퍼파라미터 추가 튜닝 (현재 BATCH_SIZE=16, LR=1e-4, WEIGHT_DECAY=1e-5, NUM_EPOCHS=100 기준) — 단, 데이터 확대가 우선
 - [ ] 추론 시간 실측 후 여유 있으면 더 큰 모델 실험
 - [ ] (최후 수단) 데이터 확대로도 DF-Arena를 못 넘으면, Music 경로를 baseline(DF-Arena)으로 되돌리는 것도 옵션으로 열어둘 것
