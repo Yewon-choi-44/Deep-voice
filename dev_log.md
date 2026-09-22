@@ -105,18 +105,27 @@ status: active
 - Real 150개로는 여전히 부족 판단 → MTG 공식 저장소 `mtg-jamendo-dataset`을 클론하여 추가 Real 음악 소스로 검토
 - 저장소 내 `venv`(Python 3.12)에서 `pip install` 시 `setuptools`/`distutils` 빌드 실패 (sdist 빌드 단계에서 에러)
 - 원인: venv의 `setuptools`가 너무 오래되어 `distutils` 대체 역할을 못함
-- 해결책 제시: `mtg-jamendo-dataset/venv/Scripts/pip install --upgrade setuptools` 후 재시도 — **아직 실행 여부 미확인, 다음 세션에서 이어서 처리 필요**
+- 해결책 제시: `mtg-jamendo-dataset/venv/Scripts/pip install --upgrade setuptools` 후 재시도
 
 ---
 
 ### 2026-09-22
 
-#### ✅ 하이퍼파라미터 재조정 및 재학습
+#### ✅ mtg-jamendo-dataset 연동 성공 — Real 데이터 대폭 확대
+
+- 전날의 `setuptools` 빌드 오류가 해결되어 mtg-jamendo 트랙 다운로드가 정상 진행됨
+- `data/raw/real_music/` 원본 파일 수가 **150개 → 18,636개**로 증가 (MusicCaps 150개 + Jamendo 트랙 다수, 파일명이 Jamendo 특유의 숫자 트랙ID `{id}.low.mp3` 형태)
+- 이 중 HTDemucs 분리(`data/separated/real/`)까지 끝낸 것은 2,016개 (Jamendo 유래 1,867개 + MusicCaps 유래 149개) — 나머지 원본은 아직 미처리 상태로 남아 있음
+- **이것으로 프로젝트의 최우선 리스크였던 "Real 데이터가 150개뿐이라 너무 좁다"는 문제가 실질적으로 해결 국면에 들어감**
+
+#### 🔄 하이퍼파라미터 재조정 및 확대된 데이터로 재학습 (18:44 시작, 진행 중)
 
 - `config.py` 변경: `BATCH_SIZE 32→16`, `NUM_EPOCHS 30→100`, `LEARNING_RATE 3e-4→1e-4`, `WEIGHT_DECAY 1e-4→1e-5`
-- manifest 재생성 (`train.csv`/`val.csv`, 18:11) 후 재학습 실행
-- 학습 로그(`logs/train_log.csv`) 기준 **epoch 9에서 val EER 7.0%**까지 확인된 이후 10 epoch 시점 기록에서 로그가 멈춰 있음 — `EARLY_STOP_PATIENCE=6` 조건(6 epoch 연속 미개선)을 아직 채우지 못한 상태라 **정상 종료인지 중단된 것인지 다음 세션에서 확인 필요**
-- 현재 `checkpoints/music_classifier_best.pt`·`music_classifier_last.pt`는 이 실행 기준 (2026-09-22 19:12~19:15 갱신)
+- manifest 재생성(18:11) — **Real(label 0) 1,700개 : Fake(label 1) 1,700개로 완전히 균형 맞춤** (기존 150 : 55,216의 극단적 불균형에서 개선). Fake는 FakeMusicCaps 55,216개 중 1,700개 서브샘플링
+- WSL에서 `python train.py --device cuda`로 재학습 실행 (PID 22133, 처음부터 새로 학습·`--resume` 아님). 옵티마이저 AdamW + `CosineAnnealingLR`(T_max=100), `BCEWithLogitsLoss`(데이터가 이미 균형 잡혀 `pos_weight` 불필요)
+- **19:47 기준 진행 상황**: epoch 20/100까지 진행, 이번 실행 최고 val EER **5.33%**(epoch 17), 이후 3 epoch(18~20) 연속 미개선(`EARLY_STOP_PATIENCE=6`이라 3 epoch 더 미개선 시 조기 종료). epoch당 약 190~200초
+- GPU(Quadro RTX 5000) VRAM은 15.8/16GB로 거의 가득 찼는데 GPU 사용률은 1%에 불과 — dataloader worker 4개가 각 13%대 CPU를 쓰는 것으로 보아 **병목이 GPU 연산이 아니라 CPU 쪽 오디오 전처리(멜스펙트로그램 계산)에 있는 것으로 추정**. 다음 개선 여지로 기록
+- 현재 `checkpoints/music_classifier_best.pt`·`music_classifier_last.pt`는 이 실행 기준으로 계속 갱신 중
 
 #### ✅ `.gitignore` 정비
 
@@ -134,10 +143,10 @@ status: active
 | music_fake_pipeline 구현 | ✅ 완료 (실제 데이터 학습까지 진행) | |
 | README.md | ✅ 완료 (로컬 환경은 pipeline README 9장 참고) | |
 | **FakeMusicCaps (Fake 샘플)** | ✅ 확보 완료 | 55,216개, 생성기 5종 |
-| **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps) | FMA 대신 MusicCaps 채택, 150개 |
-| **Real 음악 추가 확보 (mtg-jamendo-dataset)** | 🔄 진행 중 (블로킹 이슈 있음) | venv `setuptools` 빌드 오류, 해결책 제시했으나 실행 미확인 |
-| HTDemucs 분리 (prepare_data) | ✅ 완료 | manifest 재생성까지 반영 |
-| 모델 학습 (train) | 🔄 진행 중 | 최신 실행 best val EER 7.0%(epoch 9), 정상 종료 여부 미확인 |
+| **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps 150 + mtg-jamendo 다수) | 원본 18,636개까지 확대, 이 중 분리 완료 2,016개 |
+| **Real 음악 추가 확보 (mtg-jamendo-dataset)** | ✅ 해결 완료 | `setuptools` 빌드 오류 해결, 트랙 다운로드 정상 진행 중 |
+| HTDemucs 분리 (prepare_data) | 🔄 진행 중 | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료, 나머지 미처리 |
+| 모델 학습 (train) | 🔄 진행 중 (18:44~) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 20/100, best val EER 5.33%(epoch 17) |
 | 평가 (evaluate) | ⚠️ 부분 완료 | val EER 기준 확인, 리더보드 실측 결과는 아직 없음 |
 | submit.zip 통합 및 제출 | ✅ 2회 제출 완료 (09-20 baseline 그대로 0.6909, 09-21 `music_classifier` 첫 적용 0.6722) | **원인 확인 완료**: `music_classifier`가 DF-Arena zero-shot보다 나쁨(원인: 좁은 학습 데이터 추정). 데이터 확대 없이 09-22 체크포인트를 그대로 제출하는 것은 비권장 |
 
@@ -147,28 +156,26 @@ status: active
 
 ### 우선순위 순서
 
-> **09-22 진단 결과 반영**: `music_classifier`가 DF-Arena zero-shot보다 실제 리더보드에서 더 나쁘다는 것이 확인됐다(위 09-21 항목 참고). 원인으로 유력한 "학습 데이터가 너무 좁음(Real 150 · Fake 5종 생성기)"을 해결하기 전까지는, 09-22에 새 하이퍼파라미터로 재학습한 체크포인트를 그대로 제출해도 같은 문제가 반복될 가능성이 높다. **데이터 다양성 확보를 재제출보다 먼저 처리한다.**
+> **09-22 진단 결과 반영**: `music_classifier`가 DF-Arena zero-shot보다 실제 리더보드에서 더 나쁘다는 것이 확인됐다(위 09-21 항목 참고). 원인으로 지목했던 "학습 데이터가 너무 좁음(Real 150 · Fake 5종 생성기)"은 **mtg-jamendo-dataset 연동에 성공하며 이미 해결 국면**에 들어갔다(Real:Fake 1,700:1,700 균형 데이터로 재학습 진행 중, 19:47 기준 epoch 20/100). 다만 이 재학습 결과가 실제로 baseline(0.6909)을 넘는지는 **재제출 전에 반드시 확인**한다.
 
-#### 1단계 — 데이터 다양성 확보 (최우선, 재제출 전에 선행)
+#### 1단계 — 진행 중인 재학습 마무리 및 데이터 확대 지속
 
-- [ ] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 후 설치 재시도 → Real 데이터 추가 확보
-  ```bash
-  mtg-jamendo-dataset/venv/Scripts/pip install --upgrade setuptools
-  ```
-- [ ] Real 음악을 MusicCaps 150개보다 훨씬 다양한 규모로 확대 (mtg-jamendo 등) — 장르·언어·녹음 환경 다양성이 핵심
+- [x] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 → 설치 성공, 트랙 다운로드 정상 진행
+- [x] Real 음악을 MusicCaps 150개보다 다양하게 확대 (mtg-jamendo, 원본 18,636개까지 확보)
+- [ ] 확대된 Real 원본(18,636개) 중 아직 HTDemucs 미분리 상태인 나머지도 `prepare_data.py`로 마저 처리 — 현재는 2,016개만 분리 완료
+- [ ] 진행 중인 재학습(18:44~, epoch 20/100)이 조기 종료되거나 100 epoch 완주할 때까지 대기 — best val EER, 최종 정지 epoch 확인
 - [ ] Fake 음악도 FakeMusicCaps 5개 생성기 외 추가 확보 검토 (Echoes 등 — 생성기 다양성 확대가 목적, 단순 개수 증가는 아님)
-- [ ] 각 데이터셋 라이선스 조항 최종 확인 (FakeMusicCaps CC-BY-NC-4.0 등, 대회 "규칙" 탭 기준) — 아직 미완료
+- [ ] 각 데이터셋 라이선스 조항 최종 확인 (FakeMusicCaps CC-BY-NC-4.0, mtg-jamendo 등, 대회 "규칙" 탭 기준) — 아직 미완료
 
-#### 2단계 — 재학습 및 재제출 판단
+#### 2단계 — 재학습 결과 평가 및 재제출 판단
 
-- [ ] `logs/train_log.csv`/프로세스 상태 확인 — 09-22 실행(epoch 9 val EER 7.0%)이 정상 종료됐는지 확인
-- [ ] 확장된 데이터로 재학습 후 `evaluate.py`로 val EER 확인
+- [ ] 재학습 종료 후 `evaluate.py`로 최종 val EER 확인
   ```bash
   python evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv logs/val_predictions.csv
   ```
-- [ ] **val EER 개선만으로 제출을 결정하지 않는다** — 09-21의 교훈(로컬 개선이 리더보드 악화로 이어짐)을 감안해, 데이터 다양성이 실질적으로 늘었는지를 먼저 확인
-- [ ] 데이터 확대 없이 하이퍼파라미터만 바꾼 09-22 체크포인트는 **09-20 baseline 점수(0.6909)를 넘지 못할 가능성이 높으므로 그대로 제출하지 않는 것을 권장** — 일일 3회 제한 중 09-20/09-21에 이미 1회씩 사용했으므로 남은 제출 기회를 신중히 사용
-- [ ] `export_for_submit.py` → `submit.zip` 재통합 → 세 번째 제출은 데이터 확대·재학습 이후로 미룸
+- [ ] **val EER 개선만으로 제출을 결정하지 않는다** — 09-21의 교훈(로컬 개선이 리더보드 악화로 이어짐)을 감안해, 이번엔 데이터 자체가 실질적으로 다양해졌다는 근거(mtg-jamendo 혼입)가 있다는 점을 확인하고 제출
+- [ ] `export_for_submit.py` → `submit.zip` 재통합 → 세 번째 제출 (일일 3회 제한 유의, 09-20/09-21에 이미 1회씩 사용해 오늘 기준 1회 남음)
+- [ ] 이번에도 baseline(0.6909)을 못 넘으면, Music 경로를 DF-Arena로 되돌리는 옵션(3단계 참고)을 진지하게 검토
 
 #### 3단계 — 개선 (시간 여유 시)
 
@@ -196,9 +203,10 @@ status: active
 
 | 항목 | 내용 | 영향도 |
 |------|------|--------|
-| mtg-jamendo-dataset 설치 실패 | venv(Python 3.12)의 setuptools가 오래되어 distutils 대체 불가, pip install 시 빌드 오류 — 해결책만 제시, 실행 미확인 | 중간 (Real 데이터 확대 지연) |
-| 라이선스 미확인 | FakeMusicCaps(CC-BY-NC-4.0) 등 대회 적용 가능 여부 불명확 — 대회 규칙 탭 재확인 필요 | 높음 |
-| 최신 학습 실행 종료 상태 불명확 | 2026-09-22 실행이 epoch 10에서 기록이 멈춤 — early stop 조건 미충족, 정상 종료/중단 여부 미확인 | 중간 |
-| **`music_classifier`가 DF-Arena zero-shot보다 실제로 더 나쁨** | 09-20(순수 baseline) 총점 0.6909 vs 09-21(`music_classifier` 첫 적용) 총점 0.6722. zip 내부 CRC 비교로 두 제출의 유일한 차이가 music 분기뿐임을 확인함 — 이제 "원인 미상"이 아니라 **"현재 버전의 자체 학습 모델이 baseline보다 열등하다"는 확정된 사실**. Real 150개/Fake 5종 생성기라는 좁은 학습 데이터의 과적합·분포 불일치가 유력한 원인. 프로젝트의 핵심 전제(§4) 자체를 재검토해야 함 | 매우 높음 |
-| 검증 세트 규모가 작음 | 초기 실행 기준 val 44개 — EER 수치의 신뢰구간이 넓어 실제 리더보드 성능과 괴리 가능 | 중간 |
+| ~~mtg-jamendo-dataset 설치 실패~~ | **해결됨(09-22)** — setuptools 업그레이드로 pip install 성공, Real 원본 150→18,636개로 확대 | — |
+| 라이선스 미확인 | FakeMusicCaps(CC-BY-NC-4.0), mtg-jamendo 등 대회 적용 가능 여부 불명확 — 대회 규칙 탭 재확인 필요 | 높음 |
+| **`music_classifier`가 DF-Arena zero-shot보다 실제로 더 나쁨** | 09-20(순수 baseline) 총점 0.6909 vs 09-21(`music_classifier` 첫 적용) 총점 0.6722. zip 내부 CRC 비교로 두 제출의 유일한 차이가 music 분기뿐임을 확인함 — **"현재 버전의 자체 학습 모델이 baseline보다 열등하다"는 확정된 사실**. Real 150개/Fake 5종 생성기라는 좁은 학습 데이터의 과적합·분포 불일치가 유력한 원인. mtg-jamendo 연동으로 데이터가 대폭 확대되어(1,700:1,700 균형) 현재 재검증 중 — **다음 제출에서 baseline을 넘는지가 이 리스크의 실제 검증 포인트** | 매우 높음 |
+| 재학습 데이터 중 상당수가 아직 미처리 | Real 원본 18,636개 중 HTDemucs 분리 완료는 2,016개뿐 — 나머지 16,620개는 아직 학습에 반영되지 않음, 향후 추가 재학습 여지 있음 | 낮음~중간 |
+| GPU 활용률 저조 | 학습 중 VRAM은 15.8/16GB 점유되나 GPU 사용률 1% — CPU 쪽 오디오 전처리(멜스펙트로그램 계산)가 병목으로 추정, 개선 시 학습 속도 향상 가능 | 낮음 |
+| 검증 세트 규모 | 확대 데이터 기준 val 600개(이전 44개보다 개선)로 신뢰구간은 나아졌으나, 여전히 리더보드 실측과 비교 검증 필요 | 중간 |
 | 평가 서버 추론 시간 미확인 | music_classifier 추가 후 60분 제한 내 완료 여부 | 낮음 (모델이 매우 가벼움) |
