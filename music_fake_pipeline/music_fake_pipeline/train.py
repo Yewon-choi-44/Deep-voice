@@ -103,7 +103,16 @@ def main():
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=args.lr, weight_decay=args.weight_decay
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    # CosineAnnealingLR(T_max=args.epochs)는 "설정된 epoch까지 다 돈다"는 전제로
+    # LR을 서서히 낮추는 스케줄이라, early stopping으로 도중에 멈추면(예:
+    # epochs=100인데 patience=6으로 epoch 23에서 종료) 스케줄의 극히 일부만
+    # 소화한 채 LR이 초기값 근처에서 학습이 끝나버린다. ReduceLROnPlateau는
+    # early stopping과 똑같이 val EER 정체를 신호로 삼으므로, 학습이 언제
+    # 멈추든 "정체되면 LR을 낮춘다"는 동작이 항상 보장된다.
+    lr_scheduler_patience = max(1, args.patience // 2)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", factor=0.5, patience=lr_scheduler_patience
+    )
     criterion = torch.nn.BCEWithLogitsLoss()
 
     start_epoch = 1
@@ -130,13 +139,14 @@ def main():
         epoch_start = time.time()
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
         val_eer, _ = evaluate_manifest(model, args.val_manifest, device)
-        scheduler.step()
+        scheduler.step(val_eer)  # ReduceLROnPlateau는 감시 대상 지표를 인자로 받는다
         elapsed = time.time() - epoch_start
+        current_lr = optimizer.param_groups[0]["lr"]
 
         print(
             f"[epoch {epoch:03d}/{args.epochs}] "
             f"train_loss={train_loss:.4f}  val_eer={val_eer:.4f}  "
-            f"({elapsed:.1f}s)"
+            f"lr={current_lr:.2e}  ({elapsed:.1f}s)"
         )
         log_writer.writerow([epoch, f"{train_loss:.6f}", f"{val_eer:.6f}", f"{elapsed:.1f}"])
         log_file.flush()

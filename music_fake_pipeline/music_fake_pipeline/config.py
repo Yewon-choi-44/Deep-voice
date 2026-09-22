@@ -69,6 +69,8 @@ NUM_EPOCHS = 100
 LEARNING_RATE = 1e-4
 WEIGHT_DECAY = 1e-5
 NUM_WORKERS = 4
-EARLY_STOP_PATIENCE = 6     # val EER 기준
+EARLY_STOP_PATIENCE = 10    # val EER 기준. train_log.csv 실측: 개선 없이 5 epoch까지
+                            # 정체됐다가 다시 개선된 사례가 반복 관찰됨 -> 최소 6은 필요.
+                            # epoch당 비용(~3분)이 낮아 여유를 더 두고 10으로 설정 (2026-09-22)
 
 DEVICE = "cuda"  # train.py에서 미사용 가능 시 자동으로 cpu로 폴백

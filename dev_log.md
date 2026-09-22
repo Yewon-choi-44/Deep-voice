@@ -155,6 +155,21 @@ status: active
 
 - 리더보드 결과는 다음 세션에서 확인 후 이 문서에 추가할 것 (§"09-21 항목"과 동일한 형식으로 기록)
 
+#### ✅ patience(조기 종료) 값의 근거 점검 및 LR 스케줄러 수정
+
+- 사용자 질문("patience=6은 어떤 기준으로 정해졌나")을 계기로 조사 — `EARLY_STOP_PATIENCE=6`은 09-20에 `config.py`를 처음 만들 때부터의 기본값일 뿐, 실험이나 분석으로 도출된 숫자가 아님을 확인 (근거 문서/커밋 없음)
+- 조사 중 **`CosineAnnealingLR`과 early stopping의 구조적 불일치**를 발견: 스케줄러가 `T_max=args.epochs`(=config.NUM_EPOCHS=100)로 "100 epoch를 다 돈다"는 전제로 LR을 서서히 낮추도록 짜여 있는데, patience=6 조기 종료 때문에 실제로는 epoch 23(오늘 실행 기준, 전체의 23%)에서 멈춰버려 **LR이 초기값(1e-4) 근처에서 거의 안 내려간 채로 학습이 끝나는 상태**였음
+- **수정**: `train.py`의 스케줄러를 `CosineAnnealingLR` → `ReduceLROnPlateau(mode="min", factor=0.5, patience=max(1, args.patience//2))`로 교체. Early stopping과 똑같이 val EER 정체를 신호로 삼으므로, 학습이 언제 멈추든 "정체되면 LR을 절반으로 낮춘다"는 동작이 항상 보장됨. `scheduler.step()` → `scheduler.step(val_eer)`로 변경, 매 epoch 로그에 현재 LR도 출력하도록 추가(`train_log.csv` 스키마는 기존 4컬럼 유지, LR은 콘솔 출력에만 추가)
+- **참고**: 지금까지의 체크포인트(09-21 val EER 4.67%, 09-22 val EER 5.33%)는 모두 옛 `CosineAnnealingLR` 방식으로 학습된 것 — 이 수정 이후 재학습하면 다른(잠재적으로 더 나은) 결과가 나올 수 있음.
+
+#### ✅ patience 값을 실측 데이터 기반으로 6 → 10으로 재산정
+
+- `train_log.csv`에 남아있는 4번의 학습 실행 기록을 분석 — "val EER이 최고 기록을 갱신하기까지 실제로 몇 epoch을 기다려야 했는지"를 직접 집계함
+- **핵심 증거(Run 2, 30 epoch를 조기종료 없이 끝까지 완주한 유일한 런)**: 개선 없이 **5 epoch 연속 정체됐다가 6번째 epoch에 다시 개선되는 패턴이 2번 반복 관찰됨**, 최종 best(val EER 4.67%)도 마지막 epoch(30)에 갱신됨. Run 4(오늘 실행)에서도 동일하게 5 epoch 정체 후 개선되는 사례 확인
+- **결론**: `patience=5`였다면 지금 가진 최고 성능 체크포인트들을 애초에 발견하지 못하고 더 일찍 멈췄을 것 — `patience=6`은 최소 하한선이지 여유값이 아니었음
+- **비용-이득 비교**: epoch당 약 3분. patience를 늘리는 비용(6→10 시 최대 +4 epoch ≈ 12분)은 작은데, patience가 부족해 조기종료되면 학습 런 전체를 날리는 손실이 훨씬 큼 — 비대칭 구조상 낮추기보다 올리는 쪽이 안전
+- **결정**: `config.py`의 `EARLY_STOP_PATIENCE`를 6 → **10**으로 상향 (관측된 최대 정체 구간 5의 2배 여유). 연동되어 있는 `ReduceLROnPlateau`의 patience(`args.patience//2`)도 자동으로 3→5로 조정됨
+
 ---
 
 ## 현재 상태
@@ -203,6 +218,9 @@ status: active
 
 #### 3단계 — 개선 (시간 여유 시)
 
+- [x] `CosineAnnealingLR`(T_max=100) vs `EARLY_STOP_PATIENCE=6` 조기 종료 간 불일치 수정 → `ReduceLROnPlateau`로 교체 (`train.py`)
+- [x] `EARLY_STOP_PATIENCE` 근거 재검토 — `train_log.csv` 실측 기반으로 6 → 10 상향 (위 "patience 값을 실측 데이터 기반으로 재산정" 참고)
+- [ ] 새 스케줄러(`ReduceLROnPlateau`) + 새 patience(10)로 재학습해서 기존 결과(val EER 5.33%, `CosineAnnealingLR`+patience=6 방식)와 비교
 - [ ] 하이퍼파라미터 추가 튜닝 (현재 BATCH_SIZE=16, LR=1e-4, WEIGHT_DECAY=1e-5, NUM_EPOCHS=100 기준) — 단, 데이터 확대가 우선
 - [ ] 추론 시간 실측 후 여유 있으면 더 큰 모델 실험
 - [ ] (최후 수단) 데이터 확대로도 DF-Arena를 못 넘으면, Music 경로를 baseline(DF-Arena)으로 되돌리는 것도 옵션으로 열어둘 것
@@ -220,6 +238,8 @@ status: active
 | 2026-09-21 | Real 데이터는 FMA 대신 MusicCaps 채택 | FakeMusicCaps가 원래 MusicCaps 기반으로 생성됨 — 가장 자연스러운 Real/Fake 짝 |
 | 2026-09-21 | Fake 데이터는 우선 서브샘플링으로 균형 맞춤 | Real 150 : Fake 55,216 극단적 불균형, `train.py`에 pos_weight 미구현 상태였음 |
 | 2026-09-22 | 하이퍼파라미터 변경 (batch 16 / lr 1e-4 / wd 1e-5 / epoch 100) | 이전 설정(batch 32 / lr 3e-4) 대비 val EER 추가 개선 시도 |
+| 2026-09-22 | LR 스케줄러를 `CosineAnnealingLR` → `ReduceLROnPlateau`로 교체 | `T_max=100` 전제가 patience 기반 조기종료(실제 23 epoch)와 구조적으로 불일치 — early stopping과 같은 신호(val EER 정체)로 LR도 낮추도록 통일 |
+| 2026-09-22 | `EARLY_STOP_PATIENCE` 6 → 10 상향 | `train_log.csv` 실측: 5 epoch 연속 정체 후 개선되는 패턴이 반복 관찰됨 — 6은 최소 하한선이었고, epoch당 비용(~3분)이 낮아 여유를 더 둠 |
 
 ---
 
@@ -234,3 +254,5 @@ status: active
 | GPU 활용률 저조 | 학습 중 VRAM은 15.8/16GB 점유되나 GPU 사용률 1% — CPU 쪽 오디오 전처리(멜스펙트로그램 계산)가 병목으로 추정, 개선 시 학습 속도 향상 가능 | 낮음 |
 | 검증 세트 규모 | 확대 데이터 기준 val 600개(이전 44개보다 개선)로 신뢰구간은 나아졌으나, 여전히 리더보드 실측과 비교 검증 필요 | 중간 |
 | 평가 서버 추론 시간 미확인 | music_classifier 추가 후 60분 제한 내 완료 여부 | 낮음 (모델이 매우 가벼움) |
+| ~~`EARLY_STOP_PATIENCE=6`의 근거 없음~~ | **해결됨(09-22)** — `train_log.csv` 실측(5 epoch 정체 후 개선되는 패턴 반복 관측)을 근거로 6→10 상향. 단, 이 근거는 현재까지의 하이퍼파라미터·데이터 조합 기준이라 앞으로 세팅이 크게 바뀌면(예: 데이터 추가 확대) 재검증 필요 | 낮음 |
+| 지금까지의 체크포인트는 모두 옛 스케줄러/patience로 학습됨 | 09-21(val EER 4.67%), 09-22(val EER 5.33%) 체크포인트는 `CosineAnnealingLR`+`patience=6` 조합으로 학습된 것 — `ReduceLROnPlateau`+`patience=10`으로 아직 재학습 안 함. 새 설정으로 재학습하면 다른(잠재적으로 더 나은) 결과가 나올 수 있음 | 낮음~중간 |
