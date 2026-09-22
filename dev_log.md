@@ -118,14 +118,14 @@ status: active
 - 이 중 HTDemucs 분리(`data/separated/real/`)까지 끝낸 것은 2,016개 (Jamendo 유래 1,867개 + MusicCaps 유래 149개) — 나머지 원본은 아직 미처리 상태로 남아 있음
 - **이것으로 프로젝트의 최우선 리스크였던 "Real 데이터가 150개뿐이라 너무 좁다"는 문제가 실질적으로 해결 국면에 들어감**
 
-#### 🔄 하이퍼파라미터 재조정 및 확대된 데이터로 재학습 (18:44 시작, 진행 중)
+#### ✅ 하이퍼파라미터 재조정 및 확대된 데이터로 재학습 완료 (18:44 시작 → 약 19:57 조기 종료)
 
 - `config.py` 변경: `BATCH_SIZE 32→16`, `NUM_EPOCHS 30→100`, `LEARNING_RATE 3e-4→1e-4`, `WEIGHT_DECAY 1e-4→1e-5`
 - manifest 재생성(18:11) — **Real(label 0) 1,700개 : Fake(label 1) 1,700개로 완전히 균형 맞춤** (기존 150 : 55,216의 극단적 불균형에서 개선). Fake는 FakeMusicCaps 55,216개 중 1,700개 서브샘플링
 - WSL에서 `python train.py --device cuda`로 재학습 실행 (PID 22133, 처음부터 새로 학습·`--resume` 아님). 옵티마이저 AdamW + `CosineAnnealingLR`(T_max=100), `BCEWithLogitsLoss`(데이터가 이미 균형 잡혀 `pos_weight` 불필요)
-- **19:47 기준 진행 상황**: epoch 20/100까지 진행, 이번 실행 최고 val EER **5.33%**(epoch 17), 이후 3 epoch(18~20) 연속 미개선(`EARLY_STOP_PATIENCE=6`이라 3 epoch 더 미개선 시 조기 종료). epoch당 약 190~200초
-- GPU(Quadro RTX 5000) VRAM은 15.8/16GB로 거의 가득 찼는데 GPU 사용률은 1%에 불과 — dataloader worker 4개가 각 13%대 CPU를 쓰는 것으로 보아 **병목이 GPU 연산이 아니라 CPU 쪽 오디오 전처리(멜스펙트로그램 계산)에 있는 것으로 추정**. 다음 개선 여지로 기록
-- 현재 `checkpoints/music_classifier_best.pt`·`music_classifier_last.pt`는 이 실행 기준으로 계속 갱신 중
+- GPU(Quadro RTX 5000) VRAM은 학습 중 15.8/16GB로 거의 가득 찼는데 GPU 사용률은 1%에 불과 — dataloader worker 4개가 각 13%대 CPU를 쓰는 것으로 보아 **병목이 GPU 연산이 아니라 CPU 쪽 오디오 전처리(멜스펙트로그램 계산)에 있는 것으로 추정**. 다음 개선 여지로 기록
+- **최종 결과**: epoch 17에서 **best val EER 5.33%** 달성 후 6 epoch 연속 개선 없어 `EARLY_STOP_PATIENCE=6` 조건으로 **epoch 23에서 정상 조기 종료** (`train.py`의 `if epochs_without_improvement >= args.patience: break` 로직 확인, 크래시 아님)
+- `checkpoints/music_classifier_best.pt`(epoch 17 기준, 19:37 저장) / `checkpoints/music_classifier_last.pt`(epoch 23 기준, 19:56 저장) 갱신 완료, 프로세스는 정상 종료되어 GPU 메모리 해제됨(1GB 미만으로 복귀)
 
 #### ✅ `.gitignore` 정비
 
@@ -146,7 +146,7 @@ status: active
 | **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps 150 + mtg-jamendo 다수) | 원본 18,636개까지 확대, 이 중 분리 완료 2,016개 |
 | **Real 음악 추가 확보 (mtg-jamendo-dataset)** | ✅ 해결 완료 | `setuptools` 빌드 오류 해결, 트랙 다운로드 정상 진행 중 |
 | HTDemucs 분리 (prepare_data) | 🔄 진행 중 | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료, 나머지 미처리 |
-| 모델 학습 (train) | 🔄 진행 중 (18:44~) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 20/100, best val EER 5.33%(epoch 17) |
+| 모델 학습 (train) | ✅ 완료 (18:44~19:57) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 23에서 조기 종료, best val EER 5.33%(epoch 17) |
 | 평가 (evaluate) | ⚠️ 부분 완료 | val EER 기준 확인, 리더보드 실측 결과는 아직 없음 |
 | submit.zip 통합 및 제출 | ✅ 2회 제출 완료 (09-20 baseline 그대로 0.6909, 09-21 `music_classifier` 첫 적용 0.6722) | **원인 확인 완료**: `music_classifier`가 DF-Arena zero-shot보다 나쁨(원인: 좁은 학습 데이터 추정). 데이터 확대 없이 09-22 체크포인트를 그대로 제출하는 것은 비권장 |
 
@@ -156,14 +156,14 @@ status: active
 
 ### 우선순위 순서
 
-> **09-22 진단 결과 반영**: `music_classifier`가 DF-Arena zero-shot보다 실제 리더보드에서 더 나쁘다는 것이 확인됐다(위 09-21 항목 참고). 원인으로 지목했던 "학습 데이터가 너무 좁음(Real 150 · Fake 5종 생성기)"은 **mtg-jamendo-dataset 연동에 성공하며 이미 해결 국면**에 들어갔다(Real:Fake 1,700:1,700 균형 데이터로 재학습 진행 중, 19:47 기준 epoch 20/100). 다만 이 재학습 결과가 실제로 baseline(0.6909)을 넘는지는 **재제출 전에 반드시 확인**한다.
+> **09-22 진단 결과 반영**: `music_classifier`가 DF-Arena zero-shot보다 실제 리더보드에서 더 나쁘다는 것이 확인됐다(위 09-21 항목 참고). 원인으로 지목했던 "학습 데이터가 너무 좁음(Real 150 · Fake 5종 생성기)"은 **mtg-jamendo-dataset 연동에 성공하며 이미 해결 국면**에 들어갔다(Real:Fake 1,700:1,700 균형 데이터로 재학습 완료, epoch 23 조기 종료, best val EER 5.33%). 다만 이 재학습 결과가 실제로 baseline(0.6909)을 넘는지는 **재제출 전에 반드시 확인**한다.
 
-#### 1단계 — 진행 중인 재학습 마무리 및 데이터 확대 지속
+#### 1단계 — 재학습 결과 검증 및 데이터 확대 지속
 
 - [x] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 → 설치 성공, 트랙 다운로드 정상 진행
 - [x] Real 음악을 MusicCaps 150개보다 다양하게 확대 (mtg-jamendo, 원본 18,636개까지 확보)
+- [x] Real:Fake 1,700:1,700 균형 데이터로 재학습 — epoch 23에서 조기 종료, best val EER 5.33%(epoch 17)
 - [ ] 확대된 Real 원본(18,636개) 중 아직 HTDemucs 미분리 상태인 나머지도 `prepare_data.py`로 마저 처리 — 현재는 2,016개만 분리 완료
-- [ ] 진행 중인 재학습(18:44~, epoch 20/100)이 조기 종료되거나 100 epoch 완주할 때까지 대기 — best val EER, 최종 정지 epoch 확인
 - [ ] Fake 음악도 FakeMusicCaps 5개 생성기 외 추가 확보 검토 (Echoes 등 — 생성기 다양성 확대가 목적, 단순 개수 증가는 아님)
 - [ ] 각 데이터셋 라이선스 조항 최종 확인 (FakeMusicCaps CC-BY-NC-4.0, mtg-jamendo 등, 대회 "규칙" 탭 기준) — 아직 미완료
 
