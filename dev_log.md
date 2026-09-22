@@ -132,6 +132,29 @@ status: active
 - `venv/`(최상위, `.venv/`와 별개), `mtg-jamendo-dataset/`(서드파티 클론), `제출용_기본파일/`(제출 zip 백업 폴더, 각 파일 최대 4.5GB) 3개 항목 추가
 - 해당 zip들이 GitHub 100MB 제한을 초과해 그대로 두면 push가 실패하는 상태였음
 
+#### ✅ 세 번째 제출 패키지 구성 — 치명적 버그 발견·수정
+
+- `export_for_submit.py`로 오늘 학습한 best 체크포인트(epoch 17, val EER 5.33%) export → `baseline_submit/model/music_classifier/`에 반영 (CRC32로 이전 09-21 체크포인트와 다른 파일임을 확인: `0xbaaa06f5` → `0x7901d53e`)
+- **버그 발견**: `script.py`의 `main()`이 `args = parse_arguments([])`로 빈 리스트를 넘겨 `--test-dir`/`--sample-submission`/`--output`/`--device` 등 **모든 CLI 인자를 무시**하고 하드코딩된 기본값만 쓰고 있었음. `baseline_submit/script.py`와 원본 템플릿 `patched_script.py` 양쪽 다 `parse_arguments()`로 수정
+- 더미 3개 파일로 스모크 테스트 — 수정 후 CLI 인자 정상 반영, 출력 컬럼도 `sample_submission.csv`와 일치함을 확인 (exit code 0)
+- `export_for_submit.py:247`이 안내하던 `SUBMIT_INTEGRATION.md`가 실제로는 한 번도 만들어진 적 없는 "유령 파일"이었음을 발견 → 루트 `README.md` §8 Step 5 절차를 옮겨 `music_fake_pipeline/music_fake_pipeline/SUBMIT_INTEGRATION.md`로 신규 작성, 파이프라인 README §6도 이를 가리키도록 갱신
+
+#### ✅ 세 번째 제출 메모 (제출 시점 기록용)
+
+> [MUSIC_FAKE_PROB 경로 교체 제출]
+>
+> 베이스라인은 음성 딥페이크 탐지용 DF-Arena 1B를 음악 판별에도 그대로 씀. Music EER 가중치(0.3)가 Voice(0.2)보다 크고 baseline에서 유일하게 도메인 검증 안 된 지점이라 이 경로만 교체함. 나머지(PANNs, HTDemucs, Voice의 DF-Arena, MAX Fusion)는 baseline과 동일함.
+>
+> 모델(MusicFakeClassifier): log-mel spectrogram 입력, Conv-BN-ReLU-MaxPool 4블록+GAP+FC, 약 25만 파라미터.
+>
+> 데이터: 총 4,000개(Real 2,000+Fake 2,000) 중 학습셋 3,400개(Real 1,700:Fake 1,700), 검증셋 600개(Real 300:Fake 300)로 완전 균형. Real은 MusicCaps+mtg-jamendo, Fake는 FakeMusicCaps 5개 생성기 중 서브샘플링.
+>
+> 학습 조건: 배치 16, 학습률 1e-4(AdamW+CosineAnnealingLR), 최대 100 epoch, patience 6. epoch 17에서 best val EER 5.33%(train loss 0.1342) 달성, 이후 6 epoch 미개선으로 epoch 23 조기 종료(최종 train loss 0.1061).
+>
+> 참고: 직전 제출(Real 150개만 사용, val EER 4.67%)은 리더보드에서 baseline(0.6909) 대비 낮은 점수(0.6722)를 기록함. 데이터 다양성 확대가 이 격차를 해소하는지 확인하는 것이 이번 제출 목적임.
+
+- 리더보드 결과는 다음 세션에서 확인 후 이 문서에 추가할 것 (§"09-21 항목"과 동일한 형식으로 기록)
+
 ---
 
 ## 현재 상태
@@ -148,7 +171,7 @@ status: active
 | HTDemucs 분리 (prepare_data) | 🔄 진행 중 | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료, 나머지 미처리 |
 | 모델 학습 (train) | ✅ 완료 (18:44~19:57) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 23에서 조기 종료, best val EER 5.33%(epoch 17) |
 | 평가 (evaluate) | ⚠️ 부분 완료 | val EER 기준 확인, 리더보드 실측 결과는 아직 없음 |
-| submit.zip 통합 및 제출 | ✅ 2회 제출 완료 (09-20 baseline 그대로 0.6909, 09-21 `music_classifier` 첫 적용 0.6722) | **원인 확인 완료**: `music_classifier`가 DF-Arena zero-shot보다 나쁨(원인: 좁은 학습 데이터 추정). 데이터 확대 없이 09-22 체크포인트를 그대로 제출하는 것은 비권장 |
+| submit.zip 통합 및 제출 | 🔄 2회 제출 완료 + 3번째 준비 완료 (09-20 baseline 0.6909, 09-21 `music_classifier` 0.6722, 09-22 확대 데이터 재학습분 — 제출 후 결과 대기) | mtg-jamendo로 데이터 다양성을 늘린 뒤 재학습한 체크포인트(val EER 5.33%)로 3번째 제출 준비 완료. `parse_arguments([])` CLI 인자 무시 버그 발견·수정, 스모크 테스트 통과 |
 
 ---
 
@@ -169,12 +192,13 @@ status: active
 
 #### 2단계 — 재학습 결과 평가 및 재제출 판단
 
-- [ ] 재학습 종료 후 `evaluate.py`로 최종 val EER 확인
+- [x] `export_for_submit.py` → `baseline_submit/model/music_classifier/` 갱신, `script.py`의 CLI 인자 무시 버그 수정, 스모크 테스트 통과 → 세 번째 제출 패키지(내용물) 준비 완료
+- [x] 제출 메모 작성 (하이퍼파라미터·데이터 규모·loss/EER 수치 포함, 위 "세 번째 제출 메모" 참고)
+- [ ] (선택) `evaluate.py`로 최종 val EER 재확인
   ```bash
   python evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv logs/val_predictions.csv
   ```
-- [ ] **val EER 개선만으로 제출을 결정하지 않는다** — 09-21의 교훈(로컬 개선이 리더보드 악화로 이어짐)을 감안해, 이번엔 데이터 자체가 실질적으로 다양해졌다는 근거(mtg-jamendo 혼입)가 있다는 점을 확인하고 제출
-- [ ] `export_for_submit.py` → `submit.zip` 재통합 → 세 번째 제출 (일일 3회 제한 유의, 09-20/09-21에 이미 1회씩 사용해 오늘 기준 1회 남음)
+- [ ] **세 번째 제출 실제 리더보드 결과 확인 및 기록** — baseline(0.6909)을 넘는지가 mtg-jamendo 데이터 확대 전략의 실질적 검증 포인트
 - [ ] 이번에도 baseline(0.6909)을 못 넘으면, Music 경로를 DF-Arena로 되돌리는 옵션(3단계 참고)을 진지하게 검토
 
 #### 3단계 — 개선 (시간 여유 시)
