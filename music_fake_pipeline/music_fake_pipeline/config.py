@@ -64,10 +64,10 @@ N_FRAMES = SEGMENT_SAMPLES // HOP_LENGTH + 1
 # -----------------------------------------------------------------------------
 SEED = 42
 VAL_RATIO = 0.15          # 원본 파일(트랙) 단위로 분할 — 세그먼트 단위 분할 금지 (leakage 방지)
-BATCH_SIZE = 32
-NUM_EPOCHS = 30
-LEARNING_RATE = 3e-4
-WEIGHT_DECAY = 1e-4
+BATCH_SIZE = 16
+NUM_EPOCHS = 100
+LEARNING_RATE = 1e-4
+WEIGHT_DECAY = 1e-5
 NUM_WORKERS = 4
 EARLY_STOP_PATIENCE = 6     # val EER 기준
 

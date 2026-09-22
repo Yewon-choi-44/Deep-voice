@@ -277,6 +277,10 @@ scikit-learn==1.8.0     scipy==1.15.3
 
 `demucs 4.0.1`과 `4.1.0` 사이에 `demucs.separate.load_track` 함수가 제거되는 **호환성 단절**이 있다. baseline `script.py`와 이 프로젝트의 `demucs_separate.py` 모두 이 함수를 직접 import한다. `pip install demucs`만 실행하면 최신 버전이 설치되어 `ImportError`가 발생한다. **반드시 `demucs==4.0.1`로 고정해야 한다.**
 
+### ⚠️ 위 환경 설정은 평가 서버 기준 — 실제 로컬 개발 환경은 다름
+
+로컬 학습은 Windows 11 + Python 3.13.2(시스템) + NVIDIA Quadro RTX 5000(16GB, 드라이버 CUDA 13.2) + `torch==2.11.0+cu128` 환경에서 진행 중이다. `pip install torch`를 옵션 없이 실행하면 CPU 전용 빌드가 잡히는 문제 등 실제로 겪은 삽질과 해결 과정은 `music_fake_pipeline/music_fake_pipeline/README.md` 9장에 날것으로 기록되어 있다. **제출 전에는 반드시 위 표의 평가 서버 스펙(Python 3.11.15 / CUDA 12.8 / torch 2.7.1+cu128)에서 한 번 더 검증**해야 한다 — 로컬 환경과 버전이 달라 체크포인트는 로드되어도 추론 결과가 미묘하게 달라질 위험이 있다.
+
 ---
 
 ## 8. 개발 워크플로우
@@ -289,10 +293,10 @@ scikit-learn==1.8.0     scipy==1.15.3
 
 ```bash
 # HTDemucs로 accompaniment 분리 + train/val manifest 생성
-uv run prepare_data.py --htdemucs-dir ../../baseline_submit/model/htdemucs
+python prepare_data.py --htdemucs-dir ../../baseline_submit/model/htdemucs
 
 # 파이프라인 빠른 점검만 할 경우 (HTDemucs 분리 생략, 비권장)
-uv run prepare_data.py --skip-demucs --limit 20
+python prepare_data.py --skip-demucs --limit 20
 ```
 
 - train/val 분할은 **원본 파일(트랙) 단위** — 세그먼트 단위 분할 시 data leakage 발생
@@ -301,9 +305,9 @@ uv run prepare_data.py --skip-demucs --limit 20
 ### Step 2 — 학습
 
 ```bash
-uv run train.py
+python train.py
 # 또는 하이퍼파라미터 직접 지정
-uv run train.py --epochs 30 --batch-size 32 --device cuda
+python train.py --epochs 30 --batch-size 32 --device cuda
 ```
 
 - val EER 기준으로 best checkpoint(`checkpoints/music_classifier_best.pt`) 갱신
@@ -312,7 +316,7 @@ uv run train.py --epochs 30 --batch-size 32 --device cuda
 ### Step 3 — 평가
 
 ```bash
-uv run evaluate.py \
+python evaluate.py \
     --checkpoint checkpoints/music_classifier_best.pt \
     --save-csv logs/val_predictions.csv
 ```
@@ -323,7 +327,7 @@ uv run evaluate.py \
 ### Step 4 — 제출용 패키지 생성
 
 ```bash
-uv run export_for_submit.py \
+python export_for_submit.py \
     --checkpoint checkpoints/music_classifier_best.pt
 ```
 
@@ -428,22 +432,24 @@ submit.zip
 
 별도 학습 데이터셋 미제공. 참가자가 직접 구성해야 한다.
 
-### 사용 예정 외부 데이터셋
+### 사용 데이터셋 (2026-09-22 기준)
 
 | 용도 | 데이터셋 | 특징 | 라이선스 | 상태 |
 |------|---------|------|----------|------|
-| FAKE 음악 | FakeMusicCaps (Zenodo 15063698) | 생성기 5종, 10초 클립, 27,605개 | CC-BY-NC-4.0 | 다운로드 중 |
+| FAKE 음악 | FakeMusicCaps (Zenodo 15063698) | 생성기 5종(audioldm2/MusicGen_medium/musicldm/mustango/stable_audio_open) | CC-BY-NC-4.0 | ✅ 확보 완료 — **55,216개** |
+| REAL 음악 | MusicCaps | FakeMusicCaps가 원래 이 데이터셋 기반으로 생성됨 → 가장 자연스러운 Real 짝으로 채택 (FMA 계획은 폐기) | 확인 필요 | ✅ 확보 완료 — **150개** (`download_musiccaps.py`, yt-dlp 기반) |
+| REAL 음악 (추가) | mtg-jamendo-dataset | Real 규모 확대용 후보 | 확인 필요 | 🔄 진행 중 — 클론 완료, `venv`(Python 3.12) `pip install`이 `setuptools`/`distutils` 빌드 오류로 실패 (해결책: `pip install --upgrade setuptools`, 아직 실행 미확인) |
 | FAKE 음악 | Echoes | 생성기 12종, 일반화 검증용 | 확인 필요 | 미확보 |
-| REAL 음악 | FMA (Free Music Archive) | CC0/CC-BY 트랙 선별 | CC0/CC-BY | 미확보 |
 | REAL/FAKE | SONICS | 대용량, 서브샘플링 권장 | 확인 필요 | 미확보 |
 
-> ⚠️ 각 데이터셋의 라이선스 조항(특히 대회 수상 시 비상업적 범위 해당 여부)은 실제 학습 전 대회 규칙 탭 및 각 데이터셋 원문에서 직접 확인·준수해야 한다.
+> ⚠️ 각 데이터셋의 라이선스 조항(특히 대회 수상 시 비상업적 범위 해당 여부)은 실제 학습 전 대회 규칙 탭 및 각 데이터셋 원문에서 직접 확인·준수해야 한다. **아직 최종 확인 전.**
 
 ### 학습 데이터 구성 원칙
 
-- FakeMusicCaps(Fake) + Real 음악 데이터셋(Real)으로 이진 분류 학습 데이터 구성
-- 실제 추론 시 HTDemucs로 분리된 accompaniment가 모델 입력 → 학습 데이터도 동일하게 HTDemucs 분리 적용 권장
+- FakeMusicCaps(Fake) + MusicCaps(Real)로 이진 분류 학습 데이터 구성
+- 실제 추론 시 HTDemucs로 분리된 accompaniment가 모델 입력 → 학습 데이터도 동일하게 HTDemucs 분리 적용 (`prepare_data.py`로 완료)
 - train/val 분할은 **트랙(파일) 단위** — 세그먼트 단위 분할은 data leakage 발생
+- **클래스 불균형**: Real 150개 vs Fake 55,216개로 극단적 불균형 → 현재는 Fake 서브샘플링(`--limit`)으로 대응 중, `train.py`에 `pos_weight` 등 정식 클래스 가중치는 아직 미구현
 
 ---
 
@@ -456,8 +462,10 @@ submit.zip
 | `music_fake_infer.py` 독립 실행(다른 파일 의존 없음) 확인 | ✅ 확인 |
 | `patched_script.py` vs baseline diff — 음악 분기만 교체 확인 | ✅ 확인 |
 | `demucs 4.0.1` vs `4.1.0` API 차이 직접 재현 | ✅ 확인 |
-| **실제 HTDemucs 분리 결과물에 대한 학습 성능** | ❌ 미확인 (실제 데이터 필요) |
-| **실제 대회 평가 데이터에서의 Music EER 개선 폭** | ❌ 미확인 |
+| **실제 HTDemucs 분리 결과물(MusicCaps/FakeMusicCaps)에 대한 학습** | ✅ 실행 완료 — 학습 로그 기준 val EER **최저 4.67%** (30 epoch, 기존 하이퍼파라미터) |
+| 하이퍼파라미터 재조정 후 재학습(batch 16 / lr 1e-4 / epoch 100) | 🔄 진행 중 — epoch 9 시점 val EER 7.0%, 정상 종료 여부 미확인 |
+| **실제 대회 평가 데이터(리더보드) 결과** | ⚠️ 확인됨, 그러나 예상과 반대 — 09-20 총점 0.6909(ADS 0.6578/CPS 0.9893) → 09-21 총점 0.6722(ADS 0.6370/CPS 0.9893). 로컬 val EER은 13.6%→4.67%로 개선됐는데 리더보드는 하락. 원인 미조사 |
+| 검증 세트 규모 | ⚠️ 초기 실행 기준 44개로 작음 — EER 신뢰구간 넓음, 데이터 확대(mtg-jamendo) 시도 중 |
 | 평가 서버에서의 실행 시간 및 zip 용량 | ❌ 미확인 |
 
 ---
