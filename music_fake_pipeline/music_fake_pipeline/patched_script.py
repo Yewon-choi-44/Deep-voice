@@ -449,7 +449,7 @@ def save_submission(output_path, column_names, rows):
 
 
 def main():
-    args = parse_arguments([])
+    args = parse_arguments()
     device = select_device(args.device)
 
     # 1. 테스트 파일을 제출 양식의 ID 순서에 맞춘다.
