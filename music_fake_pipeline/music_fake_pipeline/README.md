@@ -118,15 +118,18 @@ uv run evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv 
 
 ## 6. submit.zip 통합
 
+> **상세한 단계별 절차(스모크 테스트, 알려진 함정 포함)는 [`SUBMIT_INTEGRATION.md`](SUBMIT_INTEGRATION.md)를 참고하세요.** 아래는 요약입니다.
+
 ```bash
-uv run export_for_submit.py --checkpoint checkpoints/music_classifier_best.pt
+../../.venv/bin/python3 export_for_submit.py --checkpoint checkpoints/music_classifier_best.pt
 ```
 
 `export/music_classifier/`에 `weights.pt`와 `music_fake_infer.py`(자기완결
-추론 모듈, 이 프로젝트의 다른 파일에 의존하지 않음)가 생성됩니다.
+추론 모듈, 이 프로젝트의 다른 파일에 의존하지 않음)가 생성됩니다. 이 디렉토리 자체의
+`.venv`에는 `torch`가 없으므로 반드시 프로젝트 루트의 `.venv`를 사용해야 합니다.
 
 **통합 절차:**
-1. `baseline_submit.zip`을 압축 해제
+1. `baseline_submit.zip`을 압축 해제 (이미 풀려있다면 재사용)
 2. `export/music_classifier/` 폴더 전체를 `model/music_classifier/`로 복사
    ```
    baseline_submit/
@@ -143,6 +146,7 @@ uv run export_for_submit.py --checkpoint checkpoints/music_classifier_best.pt
 3. `patched_script.py`의 내용으로 `script.py`를 통째로 교체
 4. `requirements.txt`는 **수정할 필요 없음** — torch/torchaudio는 이미 포함되어 있고,
    신규 모듈이 추가로 요구하는 패키지가 없음
+5. 압축 전 더미 데이터로 스모크 테스트 (상세는 `SUBMIT_INTEGRATION.md` 5번 참고)
 
 ## 7. 제출 전 검증 체크리스트
 
