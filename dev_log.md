@@ -9,7 +9,7 @@ status: active
 
 # 딥보이스 탐지 대회 — 개발 일지
 
-> **리더보드 제출 마감: 2026-09-29 (화) 10:00 KST** — 최신 갱신 시점(2026-09-22) 기준 **D-7**
+> **리더보드 제출 마감: 2026-09-29 (화) 10:00 KST** — 최신 갱신 시점(2026-09-28) 기준 **D-1**
 
 > **브랜치 안내**: `v1` = 2026-09-22 파이프라인 자동화 이전까지의 모든 내용(수동으로 `prepare_data.py`→`train.py`→`evaluate.py`→`export_for_submit.py`를 하나씩 실행하던 시절, `CosineAnnealingLR`+`patience=6`). `v2` = 학습 진행 게이지, 실행별 로그 분리(`run_logger.py`), 원샷 파이프라인(`run_pipeline.py`), `ReduceLROnPlateau`+`patience=10`, `prepare_data.py` 증분 처리, `config.py` 경로 버그 수정까지 반영된 현재 버전.
 
@@ -189,6 +189,54 @@ status: active
 
 ---
 
+### 2026-09-23 ~ 2026-09-24
+
+#### ✅ `ReduceLROnPlateau` + `patience=10` 설정으로 재학습 (3차, 데이터 추가 확대)
+
+- 사용자가 직접 `train.py --device cuda`를 실행(13:45:29 시작, 로그 `logs/20260923_134529.csv`) — v2의 `ReduceLROnPlateau`/`patience=10` 반영 이후 첫 재학습
+- 학습 직전 manifest가 재생성되어(13:42) 데이터가 다시 한 번 확대됨: **학습셋 5,100개(Real 2,550:Fake 2,550), 검증셋 900개(Real 450:Fake 450)** — 2차(3,400/600) 대비 약 1.5배
+- 배치 16 / 학습률 1e-4 / **weight decay 1e-5**(당시 커밋 상태) / 최대 100 epoch
+- **epoch 31에서 best val EER 3.11%(train loss 0.0607) 달성**, 이후 10 epoch(patience) 연속 미개선으로 **epoch 41에서 정상 조기 종료**(최종 train loss 0.0457) — 03:48:07(09-24) 종료, `checkpoints/music_classifier_best.pt`/`last.pt` 갱신
+- 2차(val EER 5.33%, epoch 23) 대비 로컬 val EER이 5.33%→3.11%로 개선 — `ReduceLROnPlateau`+patience 상향+데이터 확대가 함께 작용한 결과로 추정, 개별 기여도는 분리 확인 안 됨
+
+#### ✅ 제출 패키지 갱신 (3차 재학습 체크포인트 반영)
+
+- 위 체크포인트(epoch 31, val EER 3.11%)를 `export_for_submit.py`로 export(03:56:22, 09-24) → `baseline_submit/model/music_classifier/` 갱신
+- 이전 제출들과 동일한 절차(§8 Step 5)로 스모크 테스트 후 제출
+
+---
+
+### 2026-09-28
+
+#### ✅ 이번 제출 리더보드 결과 확인 — 처음으로 baseline 돌파
+
+- **총점 0.70871 / ADS 0.67753 / CPS 0.98932**
+- 지금까지의 전체 제출 비교:
+
+  | 제출 | 총점 | ADS | CPS | 비고 |
+  |------|------|-----|-----|------|
+  | 09-20 (순수 baseline, Music도 DF-Arena) | 0.6909110688 | 0.6577539683 | 0.9893249735 | — |
+  | 09-21 (`music_classifier` 1차, Real 150개) | 0.6722039259 | 0.636968254 | 0.9893249735 | baseline보다 낮음 |
+  | 09-28 확인 (`music_classifier` 3차 체크포인트, 학습 5,100/검증 900) | **0.70871** | **0.67753** | 0.98932 | **baseline·09-21 모두 상회** |
+
+- CPS가 세 제출에서 거의 동일(0.9893 → 0.98932)한 것으로 보아, 이번 개선분은 전부 File/Music EER 쪽에서 나온 것 — PANNs 존재 판별 경로는 그대로이므로 예상과 일치
+- **결론**: "Music 경로를 소형 CNN으로 교체한다"는 §4의 핵심 전략 가설이, 09-21에는 데이터가 너무 좁아 기각된 것처럼 보였지만 **데이터를 충분히 확대하자(학습 150→5,100) 실제로 유효한 것으로 확인됨**. 미해결 사항 표의 "music_classifier가 DF-Arena zero-shot보다 나쁨" 리스크는 이것으로 해소됨
+
+#### ✅ `WEIGHT_DECAY` 1e-3 변경 보류 결정
+
+- 다음 실험 후보로 `config.py`의 `WEIGHT_DECAY`를 1e-5 → 1e-3으로 워킹 트리에서 수정해뒀으나, 아직 이 값으로 학습을 돌린 적은 없음(위 3차 재학습은 1e-5로 진행됨)
+- 사용자 확인 결과 **현재는 커밋하지 않고 그대로 보류** — 다음 재학습에서 실제로 시도할지는 추후 결정
+
+#### 🔄 다음 라운드 개선 방향 논의 및 실행 착수
+
+- 이번 제출 성공을 바탕으로 다음 재학습에서 시도해볼 항목을 우선순위로 논의함:
+  1. **Fake 데이터 볼륨/다양성 확장** (최우선) — 확인 결과 HTDemucs 분리 완료분이 Real 6,884개 vs Fake 3,000개로 불균형해서, 균형을 맞추려 Real도 3,000개로 깎아 쓰고 있었음. Fake 분리를 늘리면 이미 확보된 Real 6,884개를 그대로 다 쓸 수 있어 총 데이터 규모가 거의 2배로 늘어남
+  2. 데이터 증강 (SpecAugment 등, `dataset.py`에 현재 random-crop 외 augmentation 없음) — FakeMusicCaps가 생성기 5종뿐이라 미지 생성기에 대한 일반화력 강화 목적
+  3. `WEIGHT_DECAY` 1e-3 실험 (가장 저비용, 위 보류 항목)
+- **사용자가 1번 방향으로 `python run_pipeline.py --limit 6000` 실행 착수** (클래스별 최대 6,000개까지 raw→HTDemucs 분리 확대 → 재학습 → 평가 → export까지 원샷). 이 문서 갱신 시점 기준 아직 `data/manifests/`, `checkpoints/`, `logs/`에 새 결과물 반영 전 — 다음 세션에서 결과 확인 필요
+
+---
+
 ## 현재 상태
 
 | 항목 | 상태 | 비고 |
@@ -197,13 +245,13 @@ status: active
 | baseline 코드 분석 | ✅ 완료 | script.py는 zip에서 별도 추출 필요 |
 | music_fake_pipeline 구현 | ✅ 완료 (v2: 원샷 파이프라인 `run_pipeline.py`까지 구축) | |
 | README.md | ✅ 완료 (로컬 환경은 pipeline README 9장 참고) | |
-| **FakeMusicCaps (Fake 샘플)** | ✅ 확보 완료 | 55,216개, 생성기 5종 |
-| **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps 150 + mtg-jamendo 다수) | 원본 18,636개까지 확대, 이 중 분리 완료 2,016개 |
-| **Real 음악 추가 확보 (mtg-jamendo-dataset)** | ✅ 해결 완료 | `setuptools` 빌드 오류 해결, 트랙 다운로드 정상 진행 중 |
-| HTDemucs 분리 (prepare_data) | 🔄 진행 중 (v2: 증분 처리 지원) | 확대된 Real 원본(18,636개) 중 2,016개만 분리 완료. `prepare_data.py`가 이제 이미 끝난 파일은 건너뛰므로, 그냥 다시 돌리면 나머지 16,620개만 처리됨 |
-| 모델 학습 (train) | ✅ 완료 (18:44~19:57) | Real:Fake 1,700:1,700 균형 데이터로 재학습, epoch 23에서 조기 종료, best val EER 5.33%(epoch 17) |
-| 평가 (evaluate) | ⚠️ 부분 완료 | val EER 기준 확인, 리더보드 실측 결과는 아직 없음 |
-| submit.zip 통합 및 제출 | 🔄 2회 제출 완료 + 3번째 준비 완료 (09-20 baseline 0.6909, 09-21 `music_classifier` 0.6722, 09-22 확대 데이터 재학습분 — 제출 후 결과 대기) | mtg-jamendo로 데이터 다양성을 늘린 뒤 재학습한 체크포인트(val EER 5.33%)로 3번째 제출 준비 완료. `parse_arguments([])` CLI 인자 무시 버그 발견·수정, 스모크 테스트 통과 |
+| **FakeMusicCaps (Fake 샘플)** | ✅ 확보 완료 | raw 55,216개, 생성기 5종. HTDemucs 분리(학습 가능) **3,000개** — Real보다 적어 현재 데이터 규모의 병목 |
+| **Real 음악 데이터** | ✅ 확보 완료 (MusicCaps 150 + mtg-jamendo 다수) | 원본 18,636개, 이 중 분리 완료 **6,884개** |
+| **Real 음악 추가 확보 (mtg-jamendo-dataset)** | ✅ 해결 완료 | `setuptools` 빌드 오류 해결, 트랙 다운로드 완료 |
+| HTDemucs 분리 (prepare_data) | 🔄 진행 중 (`--limit 6000`으로 Fake 쪽 분리 확대 시도) | Real 6,884개 분리 완료 상태에서 Fake(3,000개)에 맞춰 다운샘플링 중이었음. Fake 분리를 6,000개까지 늘려 총 데이터 규모를 키우는 작업이 09-28 진행 중 |
+| 모델 학습 (train) | ✅ 완료(epoch 41 조기 종료, 03:48 09-24) — 재학습 진행 중(`--limit 6000` 결과 대기) | Real:Fake 2,550:2,550(학습)/450:450(검증) 데이터로 재학습, epoch 31에서 best val EER 3.11%(train loss 0.0607), epoch 41 조기 종료(최종 train loss 0.0457) |
+| 평가 (evaluate) | ✅ 완료 | val EER 3.11% 확인, 리더보드 실측으로도 검증됨(아래 참고) |
+| submit.zip 통합 및 제출 | ✅ 여러 차례 제출, **이번에 처음으로 baseline 돌파** | 09-20 baseline 0.6909 / 09-21 `music_classifier` 1차 0.6722(baseline 미달) / 09-28 확인 `music_classifier` 3차 체크포인트 **0.70871**(baseline·09-21 모두 상회). 상세는 위 "2026-09-28" 항목 참고 |
 
 ---
 
@@ -211,37 +259,31 @@ status: active
 
 ### 우선순위 순서
 
-> **09-22 진단 결과 반영**: `music_classifier`가 DF-Arena zero-shot보다 실제 리더보드에서 더 나쁘다는 것이 확인됐다(위 09-21 항목 참고). 원인으로 지목했던 "학습 데이터가 너무 좁음(Real 150 · Fake 5종 생성기)"은 **mtg-jamendo-dataset 연동에 성공하며 이미 해결 국면**에 들어갔다(Real:Fake 1,700:1,700 균형 데이터로 재학습 완료, epoch 23 조기 종료, best val EER 5.33%). 다만 이 재학습 결과가 실제로 baseline(0.6909)을 넘는지는 **재제출 전에 반드시 확인**한다.
+> **09-28 진단 결과 반영**: 이번 제출(§"2026-09-28" 참고)에서 **처음으로 baseline(0.6909)을 돌파(0.70871)**함 — "데이터가 좁아서 음악 경로 교체가 손해였다"는 09-21의 진단이 맞았고, 데이터 확대(Real 150→2,550~2,700, Fake 5종 생성기 유지) + `ReduceLROnPlateau`/patience 10 조정으로 실제 해결됐다는 뜻. 남은 D-1 동안은 **더 큰 개선을 노리기보다 안전하게 마감**하는 쪽에 무게를 둔다.
 
-#### 1단계 — 재학습 결과 검증 및 데이터 확대 지속
+#### 1단계 — Fake 데이터 볼륨 확장 (진행 중, 최우선)
 
-- [x] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 → 설치 성공, 트랙 다운로드 정상 진행
-- [x] Real 음악을 MusicCaps 150개보다 다양하게 확대 (mtg-jamendo, 원본 18,636개까지 확보)
-- [x] Real:Fake 1,700:1,700 균형 데이터로 재학습 — epoch 23에서 조기 종료, best val EER 5.33%(epoch 17)
-- [ ] 확대된 Real 원본(18,636개) 중 아직 HTDemucs 미분리 상태인 나머지도 `prepare_data.py`로 마저 처리 — 현재는 2,016개만 분리 완료. v2부터는 이미 끝난 파일을 건너뛰므로 그냥 `run_pipeline.py`(또는 `prepare_data.py` 단독)를 다시 돌리면 됨
-- [ ] Fake 음악도 FakeMusicCaps 5개 생성기 외 추가 확보 검토 (Echoes 등 — 생성기 다양성 확대가 목적, 단순 개수 증가는 아님)
+- [x] `mtg-jamendo-dataset/venv`의 `setuptools` 업그레이드 → 설치 성공, 트랙 다운로드 완료
+- [x] Real 음악을 MusicCaps 150개보다 다양하게 확대 (mtg-jamendo, 원본 18,636개 확보, 분리 완료 6,884개)
+- [x] Real:Fake 균형 데이터로 재학습 3회 반복(4.67%→5.33%→3.11%) — 상세는 위 09-22·09-23~24 항목 참고
+- [ ] **Fake HTDemucs 분리를 3,000→6,000개로 확장** — Real(6,884)보다 적어 데이터 규모의 병목이었음. `python run_pipeline.py --limit 6000` 실행 중(09-28), 다음 세션에서 결과(새 manifest 크기, 재학습 val EER) 확인 필요
+- [ ] Fake 음악도 FakeMusicCaps 5개 생성기 외 추가 확보 검토 (Echoes 등 — 생성기 다양성 확대 목적) — D-1 상황상 이번 라운드에는 시도 안 함, 다음 대회/시간 남으면 검토
 - [ ] 각 데이터셋 라이선스 조항 최종 확인 (FakeMusicCaps CC-BY-NC-4.0, mtg-jamendo 등, 대회 "규칙" 탭 기준) — 아직 미완료
 
-#### 2단계 — 재학습 결과 평가 및 재제출 판단
+#### 2단계 — `--limit 6000` 재학습 결과 검증 및 5차 제출 판단
 
-- [x] `export_for_submit.py` → `baseline_submit/model/music_classifier/` 갱신, `script.py`의 CLI 인자 무시 버그 수정, 스모크 테스트 통과 → 세 번째 제출 패키지(내용물) 준비 완료
-- [x] 제출 메모 작성 (하이퍼파라미터·데이터 규모·loss/EER 수치 포함, 위 "세 번째 제출 메모" 참고)
-- [ ] (선택) `evaluate.py`로 최종 val EER 재확인
-  ```bash
-  python evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv logs/val_predictions.csv
-  ```
-- [ ] **세 번째 제출 실제 리더보드 결과 확인 및 기록** — baseline(0.6909)을 넘는지가 mtg-jamendo 데이터 확대 전략의 실질적 검증 포인트
-- [ ] 이번에도 baseline(0.6909)을 못 넘으면, Music 경로를 DF-Arena로 되돌리는 옵션(3단계 참고)을 진지하게 검토
+- [ ] `run_pipeline.py --limit 6000` 완료 후 새 `data/manifests/` 크기·클래스 균형 확인
+- [ ] 새 체크포인트의 val EER이 3.11%(3차)보다 개선되는지 확인 — 개선되면 export 후 5차 제출, 악화되면 3차 체크포인트(현재 baseline_submit에 반영된 상태) 유지
+- [ ] (선택) `WEIGHT_DECAY` 1e-3 실험 — 현재 `config.py`에 미커밋 상태로 대기 중(§"WEIGHT_DECAY 1e-3 변경 보류 결정" 참고). 시간 남으면 별도 실행으로 시도, 급하면 이번 라운드는 건너뜀
+- [ ] **일일 제출 3회 제한** 감안해 D-1(09-29) 당일 제출 횟수 계획 — 지금까지의 정확한 제출 횟수는 대콘 플랫폼에서 재확인 후 남은 시도를 신중히 배분할 것
 
-#### 3단계 — 개선 (시간 여유 시)
+#### 3단계 — 개선 (완료됨, 참고용 기록)
 
 - [x] `CosineAnnealingLR`(T_max=100) vs `EARLY_STOP_PATIENCE=6` 조기 종료 간 불일치 수정 → `ReduceLROnPlateau`로 교체 (`train.py`)
-- [x] `EARLY_STOP_PATIENCE` 근거 재검토 — `train_log.csv` 실측 기반으로 6 → 10 상향 (위 "patience 값을 실측 데이터 기반으로 재산정" 참고)
-- [ ] 새 스케줄러(`ReduceLROnPlateau`) + 새 patience(10)로 재학습해서 기존 결과(val EER 5.33%, `CosineAnnealingLR`+patience=6 방식)와 비교 — v2의 `run_pipeline.py` 한 번으로 데이터 증분 처리부터 export까지 한 번에 가능
-- [x] 원샷 파이프라인(`run_pipeline.py`) + 실행별 로그 분리(`run_logger.py`) + 학습 진행 게이지 구축, `prepare_data.py` 증분 처리·`config.py` 경로 버그 수정 (위 "파이프라인 자동화 (v1 → v2)" 참고)
-- [ ] 하이퍼파라미터 추가 튜닝 (현재 BATCH_SIZE=16, LR=1e-4, WEIGHT_DECAY=1e-5, NUM_EPOCHS=100 기준) — 단, 데이터 확대가 우선
-- [ ] 추론 시간 실측 후 여유 있으면 더 큰 모델 실험
-- [ ] (최후 수단) 데이터 확대로도 DF-Arena를 못 넘으면, Music 경로를 baseline(DF-Arena)으로 되돌리는 것도 옵션으로 열어둘 것
+- [x] `EARLY_STOP_PATIENCE` 근거 재검토 — `train_log.csv` 실측 기반으로 6 → 10 상향
+- [x] 새 스케줄러(`ReduceLROnPlateau`) + 새 patience(10)로 재학습 완료 — best val EER 3.11%(epoch 31), 기존 5.33% 대비 개선. 리더보드로도 개선 확인(0.70871)
+- [x] 원샷 파이프라인(`run_pipeline.py`) + 실행별 로그 분리(`run_logger.py`) + 학습 진행 게이지 구축, `prepare_data.py` 증분 처리·`config.py` 경로 버그 수정
+- [ ] 추론 시간 실측 — 아직 미확인(§12 참고)
 
 ---
 
@@ -258,6 +300,8 @@ status: active
 | 2026-09-22 | 하이퍼파라미터 변경 (batch 16 / lr 1e-4 / wd 1e-5 / epoch 100) | 이전 설정(batch 32 / lr 3e-4) 대비 val EER 추가 개선 시도 |
 | 2026-09-22 | LR 스케줄러를 `CosineAnnealingLR` → `ReduceLROnPlateau`로 교체 | `T_max=100` 전제가 patience 기반 조기종료(실제 23 epoch)와 구조적으로 불일치 — early stopping과 같은 신호(val EER 정체)로 LR도 낮추도록 통일 |
 | 2026-09-22 | `EARLY_STOP_PATIENCE` 6 → 10 상향 | `train_log.csv` 실측: 5 epoch 연속 정체 후 개선되는 패턴이 반복 관찰됨 — 6은 최소 하한선이었고, epoch당 비용(~3분)이 낮아 여유를 더 둠 |
+| 2026-09-28 | `WEIGHT_DECAY` 1e-3 변경은 커밋하지 않고 보류 | 이번 제출이 이미 baseline을 돌파해 급하게 정규화를 더 강화할 필요가 낮아짐 — D-1 상황에서 검증 안 된 변경보다는 Fake 데이터 확장(1단계)에 시간을 쓰는 게 우선이라 판단, 사용자 확인 |
+| 2026-09-28 | 다음 라운드 우선순위를 "Fake 데이터 볼륨 확장 > augmentation > WEIGHT_DECAY 실험" 순으로 결정 | HTDemucs 분리 완료분이 Real 6,884개 vs Fake 3,000개로 Fake가 병목 — Fake만 늘리면 이미 확보된 Real을 그대로 활용 가능해 비용 대비 효과가 가장 큼 |
 
 ---
 
@@ -267,10 +311,10 @@ status: active
 |------|------|--------|
 | ~~mtg-jamendo-dataset 설치 실패~~ | **해결됨(09-22)** — setuptools 업그레이드로 pip install 성공, Real 원본 150→18,636개로 확대 | — |
 | 라이선스 미확인 | FakeMusicCaps(CC-BY-NC-4.0), mtg-jamendo 등 대회 적용 가능 여부 불명확 — 대회 규칙 탭 재확인 필요 | 높음 |
-| **`music_classifier`가 DF-Arena zero-shot보다 실제로 더 나쁨** | 09-20(순수 baseline) 총점 0.6909 vs 09-21(`music_classifier` 첫 적용) 총점 0.6722. zip 내부 CRC 비교로 두 제출의 유일한 차이가 music 분기뿐임을 확인함 — **"현재 버전의 자체 학습 모델이 baseline보다 열등하다"는 확정된 사실**. Real 150개/Fake 5종 생성기라는 좁은 학습 데이터의 과적합·분포 불일치가 유력한 원인. mtg-jamendo 연동으로 데이터가 대폭 확대되어(1,700:1,700 균형) 현재 재검증 중 — **다음 제출에서 baseline을 넘는지가 이 리스크의 실제 검증 포인트** | 매우 높음 |
-| 재학습 데이터 중 상당수가 아직 미처리 | Real 원본 18,636개 중 HTDemucs 분리 완료는 2,016개뿐 — 나머지 16,620개는 아직 학습에 반영되지 않음, 향후 추가 재학습 여지 있음 | 낮음~중간 |
+| ~~`music_classifier`가 DF-Arena zero-shot보다 실제로 더 나쁨~~ | **해결됨(09-28)** — 09-20(순수 baseline) 총점 0.6909, 09-21(`music_classifier` 1차, 좁은 데이터) 총점 0.6722로 한때 baseline보다 열등했으나, 데이터 확대(학습 150→2,550~2,700)+`ReduceLROnPlateau`/patience 10 재학습 후 이번 제출에서 총점 **0.70871**로 처음 baseline을 돌파함. Real 150개/Fake 5종뿐이던 좁은 데이터가 원인이었다는 진단이 맞았던 것으로 확정 | — |
+| **Fake 데이터가 현재 학습 규모의 병목** | HTDemucs 분리 완료분이 Real 6,884개 vs Fake 3,000개 — 균형을 맞추려 Real도 3,000개로 깎아 쓰는 중. `run_pipeline.py --limit 6000`으로 Fake 확장 진행 중(09-28) | 중간 (개선 여지) |
 | GPU 활용률 저조 | 학습 중 VRAM은 15.8/16GB 점유되나 GPU 사용률 1% — CPU 쪽 오디오 전처리(멜스펙트로그램 계산)가 병목으로 추정, 개선 시 학습 속도 향상 가능 | 낮음 |
-| 검증 세트 규모 | 확대 데이터 기준 val 600개(이전 44개보다 개선)로 신뢰구간은 나아졌으나, 여전히 리더보드 실측과 비교 검증 필요 | 중간 |
+| 검증 세트 규모 | val 900개(Real 450:Fake 450, 이전 44개보다 대폭 개선)로 리더보드 실측(이번 제출)과도 방향이 일치함을 확인 — 신뢰도 양호 | 낮음 |
 | 평가 서버 추론 시간 미확인 | music_classifier 추가 후 60분 제한 내 완료 여부 | 낮음 (모델이 매우 가벼움) |
-| ~~`EARLY_STOP_PATIENCE=6`의 근거 없음~~ | **해결됨(09-22)** — `train_log.csv` 실측(5 epoch 정체 후 개선되는 패턴 반복 관측)을 근거로 6→10 상향. 단, 이 근거는 현재까지의 하이퍼파라미터·데이터 조합 기준이라 앞으로 세팅이 크게 바뀌면(예: 데이터 추가 확대) 재검증 필요 | 낮음 |
-| 지금까지의 체크포인트는 모두 옛 스케줄러/patience로 학습됨 | 09-21(val EER 4.67%), 09-22(val EER 5.33%) 체크포인트는 `CosineAnnealingLR`+`patience=6` 조합으로 학습된 것 — `ReduceLROnPlateau`+`patience=10`으로 아직 재학습 안 함. 새 설정으로 재학습하면 다른(잠재적으로 더 나은) 결과가 나올 수 있음 | 낮음~중간 |
+| 라이선스 미확인 (중복 항목 정리) | FakeMusicCaps(CC-BY-NC-4.0), mtg-jamendo 등 대회 적용 가능 여부 불명확 — 대회 규칙 탭 재확인 필요. D-1이라 리더보드 제출에는 영향 없으나 2차 평가(보고서) 전 확인 필요 | 높음 |
+| **일일 제출 횟수 소진 관리** | 일일 최대 3회 제한(§10). 이번 결과(0.70871)를 얻기까지 몇 번째 제출을 소진했는지는 대콘 플랫폼에서 직접 확인 필요 — D-1(09-29) 당일 남은 시도를 신중히 배분해야 함 | 중간 |

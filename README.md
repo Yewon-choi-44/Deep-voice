@@ -144,7 +144,9 @@ CPS = 0.5 × Voice Presence ROC-AUC + 0.5 × Music Presence ROC-AUC
 - 베이스라인에서 Music 경로만 유일하게 도메인 검증이 이루어지지 않은 지점
 - Voice/Presence/HTDemucs는 원래 용도와 일치하여 교체 효과 기대 낮음
 
-> ⚠️ **09-21 리더보드 결과로 이 가설이 아직 검증되지 않았음이 드러남.** DF-Arena를 그대로 쓴 09-20 제출(총점 0.6909)보다, `music_classifier`로 교체한 09-21 제출(총점 0.6722)의 점수가 더 낮았다 — 즉 현재 버전의 `music_classifier`는 DF-Arena zero-shot보다 실제 대회 데이터에서 더 나쁘게 동작한다. Real 150개(MusicCaps) · Fake 5개 생성기(FakeMusicCaps)라는 좁은 데이터로 학습한 탓에 로컬 검증 세트에는 잘 맞아도(§12 참고) 실제 평가 데이터로는 일반화되지 못했을 가능성이 높다. 상세는 `dev_log.md` 2026-09-22 항목 참고.
+> ⚠️ **09-21 리더보드 결과로 이 가설이 한때 검증되지 않은 것처럼 보였음.** DF-Arena를 그대로 쓴 09-20 제출(총점 0.6909)보다, 좁은 데이터(Real 150개)로 학습한 09-21 제출(총점 0.6722)의 점수가 더 낮았다 — 당시엔 "Music 경로 교체" 자체가 손해로 보였다.
+>
+> ✅ **2026-09-28 갱신 — 이번 제출(데이터 확대 + `ReduceLROnPlateau`/patience=10 재조정 버전)에서 처음으로 baseline을 돌파함.** 총점 **0.70871**(ADS 0.67753 / CPS 0.98932) — baseline(0.6909)과 09-21(0.6722) 모두를 상회. CPS가 세 제출 모두에서 거의 동일(0.9893 → 0.9893)한 것으로 보아 이번 개선분은 전부 File/Music EER 경로에서 나온 것이며, "Music 경로 교체" 가설 자체는 데이터가 충분히 다양해지자 유효했던 것으로 확인됨. 상세는 `dev_log.md` 2026-09-23~2026-09-28 항목 참고.
 
 ---
 
@@ -509,24 +511,25 @@ submit.zip
 
 별도 학습 데이터셋 미제공. 참가자가 직접 구성해야 한다.
 
-### 사용 데이터셋 (2026-09-22 기준)
+### 사용 데이터셋 (2026-09-28 기준)
 
 | 용도 | 데이터셋 | 특징 | 라이선스 | 상태 |
 |------|---------|------|----------|------|
-| FAKE 음악 | FakeMusicCaps (Zenodo 15063698) | 생성기 5종(audioldm2/MusicGen_medium/musicldm/mustango/stable_audio_open) | CC-BY-NC-4.0 | ✅ 확보 완료 — **55,216개** |
-| REAL 음악 | MusicCaps | FakeMusicCaps가 원래 이 데이터셋 기반으로 생성됨 → 가장 자연스러운 Real 짝으로 채택 (FMA 계획은 폐기) | 확인 필요 | ✅ 확보 완료 — **150개** (`download_musiccaps.py`, yt-dlp 기반) |
-| REAL 음악 (추가) | mtg-jamendo-dataset | Real 규모 확대용 후보 | 확인 필요 | 🔄 진행 중 — 클론 완료, `venv`(Python 3.12) `pip install`이 `setuptools`/`distutils` 빌드 오류로 실패 (해결책: `pip install --upgrade setuptools`, 아직 실행 미확인) |
+| FAKE 음악 | FakeMusicCaps (Zenodo 15063698) | 생성기 5종(audioldm2/MusicGen_medium/musicldm/mustango/stable_audio_open) | CC-BY-NC-4.0 | ✅ 확보 완료 — raw **55,216개**, 이 중 HTDemucs 분리(학습 가능) **3,000개** |
+| REAL 음악 | MusicCaps + mtg-jamendo-dataset | FakeMusicCaps가 원래 MusicCaps 기반으로 생성됨 → 가장 자연스러운 Real 짝. mtg-jamendo는 `setuptools` 빌드 오류(09-21) 해결 후 대량 확보 | 확인 필요 | ✅ 확보 완료 — raw **18,636개**(MusicCaps 150 + mtg-jamendo 다수), 이 중 HTDemucs 분리(학습 가능) **6,884개** |
 | FAKE 음악 | Echoes | 생성기 12종, 일반화 검증용 | 확인 필요 | 미확보 |
 | REAL/FAKE | SONICS | 대용량, 서브샘플링 권장 | 확인 필요 | 미확보 |
 
 > ⚠️ 각 데이터셋의 라이선스 조항(특히 대회 수상 시 비상업적 범위 해당 여부)은 실제 학습 전 대회 규칙 탭 및 각 데이터셋 원문에서 직접 확인·준수해야 한다. **아직 최종 확인 전.**
 
+> 🔄 **2026-09-28 진행 중**: Fake는 분리 완료분(3,000개)이 Real 분리 완료분(6,884개)보다 훨씬 적어 균형을 맞추려고 Real도 3,000개로 깎아 쓰고 있었음 — Fake 쪽 분리 개수를 늘리면 이미 확보된 Real을 그대로 다 쓸 수 있어 데이터 규모가 커짐. 이를 위해 `python run_pipeline.py --limit 6000`(클래스별 최대 6,000개까지 raw→HTDemucs 분리 확대) 실행 중.
+
 ### 학습 데이터 구성 원칙
 
-- FakeMusicCaps(Fake) + MusicCaps(Real)로 이진 분류 학습 데이터 구성
-- 실제 추론 시 HTDemucs로 분리된 accompaniment가 모델 입력 → 학습 데이터도 동일하게 HTDemucs 분리 적용 (`prepare_data.py`로 완료)
+- FakeMusicCaps(Fake) + MusicCaps/mtg-jamendo(Real)로 이진 분류 학습 데이터 구성
+- 실제 추론 시 HTDemucs로 분리된 accompaniment가 모델 입력 → 학습 데이터도 동일하게 HTDemucs 분리 적용 (`prepare_data.py`로 완료, v2부터 이미 처리된 파일은 재실행 시 건너뜀)
 - train/val 분할은 **트랙(파일) 단위** — 세그먼트 단위 분할은 data leakage 발생
-- **클래스 불균형**: Real 150개 vs Fake 55,216개로 극단적 불균형 → 현재는 Fake 서브샘플링(`--limit`)으로 대응 중, `train.py`에 `pos_weight` 등 정식 클래스 가중치는 아직 미구현
+- **클래스 균형**: HTDemucs 분리 완료분 기준으로는 Real(6,884)이 Fake(3,000)보다 많지만, 두 클래스를 1:1로 맞춰 샘플링 — 최근 학습(2026-09-23) 기준 학습셋 5,100개(Real 2,550:Fake 2,550) / 검증셋 900개(Real 450:Fake 450)로 완전 균형. `train.py`에 `pos_weight` 등 정식 클래스 가중치는 별도로 필요 없는 상태(이미 balanced sampling)
 
 ---
 
@@ -539,10 +542,11 @@ submit.zip
 | `music_fake_infer.py` 독립 실행(다른 파일 의존 없음) 확인 | ✅ 확인 |
 | `patched_script.py` vs baseline diff — 음악 분기만 교체 확인 | ✅ 확인 |
 | `demucs 4.0.1` vs `4.1.0` API 차이 직접 재현 | ✅ 확인 |
-| **실제 HTDemucs 분리 결과물(MusicCaps/FakeMusicCaps)에 대한 학습** | ✅ 실행 완료 — 학습 로그 기준 val EER **최저 4.67%** (30 epoch, 기존 하이퍼파라미터) |
-| 하이퍼파라미터 재조정 후 재학습(batch 16 / lr 1e-4 / epoch 100) | 🔄 진행 중 — epoch 9 시점 val EER 7.0%, 정상 종료 여부 미확인 |
-| **실제 대회 평가 데이터(리더보드) 결과** | ⚠️ 확인됨, 그러나 예상과 반대 — **09-20 제출은 baseline 그대로(Music도 DF-Arena 사용)**로 총점 0.6909(ADS 0.6578/CPS 0.9893), **09-21 제출이 이 프로젝트의 `music_classifier`를 처음 적용**한 것으로 총점 0.6722(ADS 0.6370/CPS 0.9893). 즉 **DF-Arena zero-shot을 이 프로젝트의 소형 CNN으로 교체한 것 자체가 실제 대회 데이터에서는 오히려 손해**였다는 뜻. 원인은 Real 150개/Fake 5개 생성기라는 좁은 학습 데이터로 인한 과적합·분포 불일치로 추정(§4, §11 참고) |
-| 검증 세트 규모 | ⚠️ 초기 실행 기준 44개로 작음 — EER 신뢰구간 넓음, 데이터 확대(mtg-jamendo) 시도 중 |
+| 실제 HTDemucs 분리 결과물(MusicCaps/FakeMusicCaps)에 대한 학습 (1차, 좁은 데이터) | ✅ 실행 완료 — val EER **4.67%** (30 epoch, `CosineAnnealingLR`+patience 6) |
+| 데이터 확대(mtg-jamendo) + 하이퍼파라미터 재조정 후 재학습 (2차) | ✅ 실행 완료 — val EER **5.33%**(epoch 17, `CosineAnnealingLR`+patience 6, epoch 23 조기 종료) |
+| `ReduceLROnPlateau`+patience 10 교체 후 재학습 (3차, 학습 5,100/검증 900) | ✅ 실행 완료 — **best val EER 3.11%**(epoch 31, train loss 0.0607), 10 epoch 미개선으로 epoch 41 조기 종료(최종 train loss 0.0457). 배치 16 / lr 1e-4 / weight decay 1e-5 |
+| **실제 대회 평가 데이터(리더보드) 결과** | ✅ **이번 제출(3차 재학습 체크포인트)에서 baseline 최초 돌파.** 09-20 baseline 총점 0.6909(ADS 0.6578/CPS 0.9893) → 09-21 좁은 데이터 `music_classifier` 총점 0.6722(ADS 0.6370/CPS 0.9893, baseline보다 낮았음) → **2026-09-28 확인: 총점 0.70871(ADS 0.67753/CPS 0.98932)**, baseline·09-21 모두 상회. CPS가 세 제출에서 거의 동일해 개선분은 File/Music EER에서만 발생한 것으로 판단됨 |
+| 검증 세트 규모 | 초기 44개 → 현재 900개(Real 450:Fake 450)로 대폭 개선, 신뢰구간 안정화 |
 | 평가 서버에서의 실행 시간 및 zip 용량 | ❌ 미확인 |
 
 ---
