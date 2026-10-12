@@ -28,6 +28,9 @@ build/
 *.ckpt
 *.safetensors
 
+# 예외: 리더보드 0.70871을 낸 music_classifier 가중치(약 1MB, CRC32 f6e9e676)는 포트폴리오용으로 추적
+!baseline_submit/model/music_classifier/weights.pt
+
 # baseline_submit.zip 자체도 4.3 GB
 baseline_submit.zip
 
@@ -39,6 +42,8 @@ music_fake_pipeline.zip
 
 # 대용량 데이터셋
 FakeMusicCaps/
+MusicGen_medium/
+__MACOSX/
 
 # 외부 서드파티 저장소 클론 (자체 .git 포함, MTG 공식 리포)
 mtg-jamendo-dataset/
