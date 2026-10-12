@@ -240,26 +240,30 @@ FILE_FAKE_PROB = max(VOICE_PRESENT × VOICE_FAKE, MUSIC_PRESENT × MUSIC_FAKE) (
 
 ## 6. 디렉토리 구조
 
+아래 트리에서 **(제외)** 표시는 로컬 작업 환경에는 있지만 이 저장소에는 포함하지 않은 대회 제공물·파생물이다(§14.5).
+
 ```
 Deep_voice/
 ├── README.md                         # 이 문서
-├── deepvoice_competition_summary.md  # 대회 규정·평가·일정 정리 노트
+├── deepvoice_competition_summary.md  # (제외) 대회 규정·평가·일정 정리 노트
 ├── main.py                           # placeholder (미사용)
 ├── .python-version                   # Python 3.11
 ├── .venv/                            # 가상환경
 │
 ├── dev_log.md                        # 날짜별 개발 일지 + 종료 후 사후 점검
-├── 제출용_기본파일/                  # 제출 zip 백업 (git 제외, 각 4.5GB) — baseline_submit.zip 원본 포함
+├── 제출용_기본파일/                  # (제외) 제출 zip 백업 (각 4.5GB) — baseline_submit.zip 원본 포함
 ├── baseline_submit/                  # baseline_submit.zip 압축 해제본 + music_classifier (제출 패키지의 작업 디렉토리)
-│   ├── requirements.txt
-│   ├── script.py                     # patched_script.py와 동일 (CLI 인자 버그 수정판)
+│   ├── requirements.txt              # (제외)
+│   ├── script.py                     # (제외) baseline script.py에 patched_script.diff를 적용한 제출용 스크립트
 │   └── model/
-│       ├── MODEL_INFO.txt
-│       ├── SHA256SUMS.txt
-│       ├── df_arena_1b/              # DF-Arena 1B 가중치 및 소스
-│       ├── htdemucs/                 # HTDemucs 가중치
-│       ├── panns/                    # PANNs Cnn14 가중치 + 레이블 설정
+│       ├── MODEL_INFO.txt            # (제외)
+│       ├── SHA256SUMS.txt            # (제외)
+│       ├── df_arena_1b/              # (제외) DF-Arena 1B 가중치 및 소스
+│       ├── htdemucs/                 # (제외) HTDemucs 가중치
+│       ├── panns/                    # (제외) PANNs Cnn14 가중치 + 레이블 설정
 │       └── music_classifier/         # 직접 학습한 분류기 (3차 체크포인트, 리더보드 0.70871)
+│           ├── weights.pt            # 약 1MB, CRC32 f6e9e676
+│           └── music_fake_infer.py   # 다른 파일에 의존하지 않는 자기완결 추론 모듈
 │
 ├── music_fake_pipeline/
 │   └── music_fake_pipeline/          # MUSIC_FAKE_PROB 교체 파이프라인 (상세: 내부 README 참고)
@@ -276,7 +280,7 @@ Deep_voice/
 │       ├── run_logger.py             # v2 신규: 실행별 logs/{시각}.csv 로그 생성
 │       ├── run_pipeline.py           # v2 신규: prepare→train→evaluate→export 원샷 실행
 │       ├── SUBMIT_INTEGRATION.md     # 제출 파일 구성 상세 절차
-│       ├── patched_script.py         # 최종 제출용 script.py
+│       ├── patched_script.diff       # baseline script.py 대비 내가 바꾼 부분만 (patched_script.py 자체는 제외)
 │       ├── requirements-dev.txt
 │       └── data/
 │           ├── raw/real_music/       # ← REAL 음악 원본 (직접 채울 것)
@@ -284,7 +288,7 @@ Deep_voice/
 │           ├── separated/{real,fake}/
 │           └── manifests/
 │
-└── data/                             # 형식 확인용 더미 데이터
+└── data/                             # (제외) 형식 확인용 더미 데이터
     ├── sample_submission.csv
     └── test/
         ├── TEST_0000.wav
@@ -293,7 +297,7 @@ Deep_voice/
 ```
 
 > `data/test/`는 형식 확인용 더미(3개)다. 실제 평가 시 서버가 1,200개 파일로 자동 교체한다.  
-> `baseline_submit/script.py`는 `music_fake_pipeline/.../patched_script.py`와 동일한 제출용 스크립트(CRC32 `84248641`)다. 대회 제공 **원본** baseline `script.py`는 `제출용_기본파일/baseline_submit.zip` 내부에만 있다.
+> 제출용 `script.py`는 대회 제공 baseline `script.py`(CRC32 `bf8e3455`)에 `patched_script.diff`를 적용한 결과(CRC32 `84248641`)다. 원본은 대회 페이지의 baseline 패키지(`baseline_submit.zip`)에 들어 있다.
 
 ---
 
@@ -442,13 +446,15 @@ cd music_fake_pipeline/music_fake_pipeline
       baseline_submit/model/music_classifier/music_fake_infer.py
    ```
 
-3. **`script.py` 확인** — `baseline_submit/script.py`가 최신 `patched_script.py`와 같은 내용인지 diff로 확인하고, 다르면 통째로 교체한다:
+3. **`script.py` 구성** — 대회 제공 baseline `script.py`(CRC32 `bf8e3455`)에 `patched_script.diff`를 적용해 `baseline_submit/script.py`를 만든다. (`patched_script.py` 전체는 대회 제공 코드와 거의 같아 저장소에 두지 않고 변경분만 diff로 보관한다.)
    ```bash
-   diff baseline_submit/script.py music_fake_pipeline/music_fake_pipeline/patched_script.py
-   # 다르면:
-   cp music_fake_pipeline/music_fake_pipeline/patched_script.py baseline_submit/script.py
+   # <원본>은 baseline_submit.zip 안의 script.py를 따로 풀어 둔 경로
+   patch -o baseline_submit/script.py <원본>/script.py \
+         < music_fake_pipeline/music_fake_pipeline/patched_script.diff
+   # 결과 확인: CRC32가 84248641 이어야 함
+   python3 -c "import zlib; print('%08x' % (zlib.crc32(open('baseline_submit/script.py','rb').read()) & 0xffffffff))"
    ```
-   > ⚠️ **알려진 함정 (2026-09-22 수정됨)**: 한때 `main()`이 `args = parse_arguments([])`로 빈 리스트를 넘겨 `--test-dir`/`--sample-submission`/`--output`/`--device` 등 **모든 CLI 인자를 무시하고 하드코딩된 기본값만 쓰는 버그**가 있었다. 지금은 `args = parse_arguments()`로 고쳐져 있다. `patched_script.py`를 손으로 다시 수정할 일이 있으면 이 줄이 되돌아가지 않았는지 반드시 확인할 것.
+   > ⚠️ **알려진 함정 (2026-09-22 수정됨)**: 한때 `main()`이 `args = parse_arguments([])`로 빈 리스트를 넘겨 `--test-dir`/`--sample-submission`/`--output`/`--device` 등 **모든 CLI 인자를 무시하고 하드코딩된 기본값만 쓰는 버그**가 있었다. 지금은 `args = parse_arguments()`로 고쳐져 있다(diff에 포함). 스크립트를 손으로 다시 수정할 일이 있으면 이 줄이 되돌아가지 않았는지 반드시 확인할 것.
 
 4. **`requirements.txt`** — 수정 불필요 (음악 분류기가 요구하는 패키지는 서버에 이미 있는 torch/torchaudio뿐).
 
@@ -482,7 +488,7 @@ cd music_fake_pipeline/music_fake_pipeline
 
 ### baseline script.py 실행 (로컬 검증용)
 
-> 원본 baseline `script.py`는 `제출용_기본파일/baseline_submit.zip` 내부에만 있다. 먼저 추출해야 한다. (패치된 제출용 `script.py`는 `baseline_submit/script.py`에 이미 있음)
+> 원본 baseline `script.py`는 대회 페이지의 baseline 패키지(`baseline_submit.zip`) 안에만 있다(이 저장소에는 포함하지 않음). 먼저 추출해야 한다. 아래 경로는 원본 zip을 `제출용_기본파일/`에 보관한 로컬 환경 기준이다.
 
 ```bash
 # zip에서 원본 script.py 추출
@@ -521,7 +527,7 @@ submit.zip
 │   └── music_classifier/      # 신규 추가
 │       ├── weights.pt
 │       └── music_fake_infer.py
-├── script.py                  # patched_script.py로 교체
+├── script.py                  # baseline에 patched_script.diff를 적용한 것
 └── requirements.txt           # 수정 불필요
 ```
 
@@ -551,7 +557,7 @@ submit.zip
 
 ### 제출 전 검증 체크리스트
 
-- [ ] `data/test/`의 더미 3개 파일로 `patched_script.py` 전체 실행이 에러 없이 완료되는지
+- [ ] `data/test/`의 더미 3개 파일로 패치 적용된 `script.py` 전체 실행이 에러 없이 완료되는지
 - [ ] `output/submission.csv`가 `sample_submission.csv`와 동일한 컬럼/행 수로 생성되는지
 - [ ] (가능하면) Python 3.11.15 + CUDA 12.8 + torch 2.7.1+cu128 환경에서 한 번 더 실행
 - [ ] `submit.zip` 압축 시 최상위에 불필요한 폴더가 끼지 않았는지
@@ -596,7 +602,7 @@ submit.zip
 | 전체 파이프라인 합성 데이터 end-to-end 실행 | ✅ 정상 동작 확인 |
 | `MusicFakeClassifier` 텐서 채널 차원 버그 발견·수정 | ✅ 수정 완료 |
 | `music_fake_infer.py` 독립 실행(다른 파일 의존 없음) 확인 | ✅ 확인 |
-| `patched_script.py` vs baseline diff — 음악 분기만 교체 확인 | ✅ 확인 |
+| `patched_script.diff`(baseline 대비 변경분) — 음악 분기만 교체 확인, 원본에 적용하면 제출본(CRC32 `84248641`)이 그대로 재현됨 | ✅ 확인 |
 | `demucs 4.0.1` vs `4.1.0` API 차이 직접 재현 | ✅ 확인 |
 | 실제 HTDemucs 분리 결과물(MusicCaps/FakeMusicCaps)에 대한 학습 (1차, 좁은 데이터) | ✅ 실행 완료 — val EER **4.67%** (30 epoch, `CosineAnnealingLR`+patience 6) |
 | 데이터 확대(mtg-jamendo) + 하이퍼파라미터 재조정 후 재학습 (2차) | ✅ 실행 완료 — val EER **5.33%**(epoch 17, `CosineAnnealingLR`+patience 6, epoch 23 조기 종료) |
@@ -675,4 +681,5 @@ submit.zip
 
 - 학습 데이터, 체크포인트, 제출 zip, 대화 로그(`chat_log/`)는 용량·라이선스 문제로 git에서 제외되어 있다. 예외로 **리더보드 0.70871을 낸 가중치** `baseline_submit/model/music_classifier/weights.pt`(약 1MB, CRC32 `f6e9e676`, 3차 재학습 epoch 31)는 추적한다. 4차 재학습 체크포인트(`checkpoints/`)는 포함하지 않는다.
 - 이 저장소의 코드는 **결과를 만든 상태 그대로**이며 §8의 "알려진 결함"을 포함한다. 새로 학습하려면 먼저 그 결함들을 고칠 것.
-- 라이선스: FakeMusicCaps는 CC-BY-NC-4.0이며, 데이터셋·대회 제공물의 재사용·재배포 가능 여부는 최종 확인하지 않았다(`dev_log.md` 참고).
+- **대회 제공물은 저장소에 포함하지 않는다.** 재배포 가능 여부를 확인하지 못했기 때문이다. 제외한 것: baseline `script.py`와 이를 그대로 옮긴 `patched_script.py`, `baseline_submit/`의 `requirements.txt`·`MODEL_INFO.txt`·`SHA256SUMS.txt`·`df_arena_1b/`·`htdemucs/`·`panns/`, 형식 확인용 `data/test/`·`data/sample_submission.csv`, 대회 규정 정리 노트 `deepvoice_competition_summary.md`. 로컬 작업 디렉토리에는 그대로 있고 `.gitignore`로 추적만 제외했다. 이 파일들은 대회 페이지의 baseline 패키지에서 받아 `baseline_submit/`에 풀어야 한다. 제출용 `script.py`는 내가 바꾼 부분만 `patched_script.diff`로 보관한다(§8 Step 5).
+- 라이선스: FakeMusicCaps는 CC-BY-NC-4.0이며, 데이터셋·대회 제공물의 재사용·재배포 가능 여부는 최종 확인하지 않았다(`dev_log.md` 참고). README §1~3·§10에 정리한 대회 개요·평가식·제출 규격은 대회 페이지 내용을 요약한 것이다.

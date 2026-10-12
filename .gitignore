@@ -31,6 +31,20 @@ build/
 # 예외: 리더보드 0.70871을 낸 music_classifier 가중치(약 1MB, CRC32 f6e9e676)는 포트폴리오용으로 추적
 !baseline_submit/model/music_classifier/weights.pt
 
+# 대회 제공물 및 그 파생물 — 재배포 가능 여부를 확인하지 못해 추적 제외 (로컬 파일은 유지)
+# 직접 만든 변경분은 music_fake_pipeline/music_fake_pipeline/patched_script.diff 로 대체
+baseline_submit/script.py
+baseline_submit/requirements.txt
+baseline_submit/model/MODEL_INFO.txt
+baseline_submit/model/SHA256SUMS.txt
+baseline_submit/model/df_arena_1b/
+baseline_submit/model/htdemucs/
+baseline_submit/model/panns/
+data/test/
+data/sample_submission.csv
+deepvoice_competition_summary.md
+music_fake_pipeline/music_fake_pipeline/patched_script.py
+
 # baseline_submit.zip 자체도 4.3 GB
 baseline_submit.zip
 

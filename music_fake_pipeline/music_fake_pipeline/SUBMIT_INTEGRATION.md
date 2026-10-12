@@ -47,19 +47,21 @@ cp export/music_classifier/music_fake_infer.py \
 
 ## 3. `script.py` 동기화
 
-`baseline_submit/script.py`가 최신 `patched_script.py`와 같은 내용인지 diff로 확인하고,
-다르면 통째로 교체합니다:
+대회 제공 baseline `script.py`(CRC32 `bf8e3455`)에 `patched_script.diff`를 적용해
+`baseline_submit/script.py`를 만듭니다. `patched_script.py` 전체는 대회 제공 코드와 거의
+같아서 저장소에 두지 않고, 바꾼 부분만 diff로 보관합니다:
 
 ```bash
-diff ../../baseline_submit/script.py patched_script.py
-# 다르면:
-cp patched_script.py ../../baseline_submit/script.py
+# <원본>은 baseline_submit.zip 안의 script.py를 따로 풀어 둔 경로
+patch -o ../../baseline_submit/script.py <원본>/script.py < patched_script.diff
+# 결과 CRC32가 84248641 인지 확인
+python3 -c "import zlib; print('%08x' % (zlib.crc32(open('../../baseline_submit/script.py','rb').read()) & 0xffffffff))"
 ```
 
 > ⚠️ **알려진 함정 (2026-09-22 수정됨)**: 한때 `main()`이 `args = parse_arguments([])`로
 > 빈 리스트를 넘겨 `--test-dir`/`--sample-submission`/`--output`/`--device` 등
 > **모든 CLI 인자를 무시하고 하드코딩된 기본값만 쓰는 버그**가 있었습니다. 지금은
-> `args = parse_arguments()`로 고쳐져 있습니다. `patched_script.py`를 손으로 다시 수정할
+> `args = parse_arguments()`로 고쳐져 있습니다(diff에 포함). 스크립트를 손으로 다시 수정할
 > 일이 있으면 이 줄이 되돌아가지 않았는지 반드시 확인하세요.
 
 ## 4. `requirements.txt`
