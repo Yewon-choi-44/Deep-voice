@@ -11,7 +11,7 @@
 - DF-Arena 1B 기반 VOICE_FAKE_PROB
 - MAX Fusion 결합 로직
 
-`patched_script.diff`(baseline 원본 대비 변경분)로 확인했고, 실제로 바뀐 곳은
+`patched_script.py`와 baseline 원본을 줄 단위로 diff해서 확인했고, 실제로 바뀐 곳은
 **음악 분기의 모델 교체 한 곳**뿐입니다 (아래 6번 섹션 참고).
 
 ## 1. 디렉토리 구조
@@ -28,7 +28,7 @@ music_fake_pipeline/
 ├── train.py                   # 학습 루프 (val EER 기준 best checkpoint 저장)
 ├── evaluate.py                 # 대회 평가 산식과 동일한 EER 계산
 ├── export_for_submit.py       # 체크포인트 -> submit.zip에 넣을 자기완결 패키지
-├── patched_script.diff        # baseline script.py 대비 music_classifier 통합 변경분 (전체 코드는 대회 제공물 기반이라 저장소 제외)
+├── patched_script.py          # baseline script.py에 music_classifier를 통합한 전체 코드
 ├── requirements-dev.txt        # 로컬 학습 환경용 패키지 버전 고정
 ├── data/
 │   ├── raw/real_music/        # (직접 채워 넣을 것) REAL 음악 원본
@@ -143,7 +143,7 @@ uv run evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv 
    ├── script.py
    └── requirements.txt
    ```
-3. baseline `script.py`에 `patched_script.diff`를 적용해 `script.py`를 구성 (상세는 `SUBMIT_INTEGRATION.md` 3번 참고)
+3. `patched_script.py`의 내용으로 `script.py`를 통째로 교체
 4. `requirements.txt`는 **수정할 필요 없음** — torch/torchaudio는 이미 포함되어 있고,
    신규 모듈이 추가로 요구하는 패키지가 없음
 5. 압축 전 더미 데이터로 스모크 테스트 (상세는 `SUBMIT_INTEGRATION.md` 5번 참고)
@@ -171,7 +171,7 @@ uv run evaluate.py --checkpoint checkpoints/music_classifier_best.pt --save-csv 
 - `export_for_submit.py`가 만든 `music_fake_infer.py`가 프로젝트의 다른 파일 없이
   완전히 독립적으로 로드·추론되는지 확인
 - `demucs==4.0.1` vs `4.1.0` 간의 `load_track` API 차이를 직접 재현·확인
-- 패치 적용 결과가 baseline 원본과 의도한 부분만 다른지 `patched_script.diff`로 확인
+- `patched_script.py`가 baseline 원본과 의도한 부분만 다른지 diff로 확인
 
 **아직 확인되지 않은 것 (실측 필요):**
 - 실제 HTDemucs 분리 결과물에 대한 학습 성능 (이 환경에는 실제 HTDemucs

@@ -431,7 +431,7 @@ status: completed
 | 2026-09-28 | 다음 라운드 우선순위를 "Fake 데이터 볼륨 확장 > augmentation > WEIGHT_DECAY 실험" 순으로 결정 | HTDemucs 분리 완료분이 Real 6,884개 vs Fake 3,000개로 Fake가 병목 — Fake만 늘리면 이미 확보된 Real을 그대로 활용 가능해 비용 대비 효과가 가장 큼. **→ 사후 점검: Fake 고유 stem이 5,521개뿐이고 단일 생성기여서 이 전제(Fake를 늘리면 규모가 커진다)가 성립하지 않았음** |
 | 2026-09-28 | (번복) `WEIGHT_DECAY` 1e-3·`EARLY_STOP_PATIENCE` 20을 적용해 4차 재학습 시작 | 위 "보류" 결정 후 몇 시간 안에 번복됨. 번복 근거를 담은 기록은 없음. 데이터·weight decay·patience를 동시에 바꿔 효과 분리 불가 |
 | 2026-10-12 | 사후 점검에서 발견한 결함(파일명 충돌·manifest 중복·학습 중 val 교체)을 **코드에서 고치지 않고 문서에만 기록** | 수정하면 리더보드 점수(0.70871)를 만든 코드와 저장소 상태가 달라져 결과의 재현 근거가 흐려짐. 고치려면 재분리·재학습이 필요하며 대회가 이미 끝남 |
-| 2026-10-12 | 대회 제공물을 팁에서 추적 제외하고 `patched_script.py` 전체 대신 변경분 `patched_script.diff`만 보관 | 재배포 가능 여부 미확인. `baseline_submit/script.py`와 `patched_script.py`는 바이트 단위로 동일(CRC32 `84248641`)해 한쪽만 빼면 의미가 없음. diff를 원본(CRC32 `bf8e3455`)에 적용하면 제출본이 그대로 재현됨을 확인. 과거 이력은 그대로 둠(위 리스크 표 참고) |
+| 2026-10-12 | 대회 제공물을 저장소에서 제외하려던 것을 취소 | 제외 커밋(`3085a4a`)을 푸시한 직후, 저장소 소유자가 "대회 홈페이지에 공개된 소스라 재배포해도 상관없다"고 확인함. `git revert`로 되돌려 제공물 27개를 다시 추적하고 `patched_script.diff`는 제거. 제외 작업이 이력에 남아 있는 것은 revert 방식이라 의도된 결과 |
 | 2026-10-12 | 4차 재학습 val EER(0.75%)을 성과 지표로 쓰지 않음 | val 도중 교체 + train/val 중복 + 단일 생성기 평가. 대표 성과는 리더보드 0.70871만 사용 |
 
 ---
@@ -448,8 +448,8 @@ status: completed
 | 2차 평가 | 참여 여부 기록 없음 | 정보 부족 |
 | 09-22 제출 2건의 점수 | 패키지는 남아 있으나 점수 기록 없음 | 낮음 |
 | ~~mtg-jamendo-dataset 설치 실패~~ | **해결됨(09-22)** — setuptools 업그레이드로 pip install 성공, Real 원본 150→18,636개로 확대 | — |
-| 라이선스 미확인 | FakeMusicCaps(CC-BY-NC-4.0), mtg-jamendo 등 대회 적용 가능 여부 불명확 — 대회 규칙 탭 재확인 필요. 대회 제공물의 재배포 가능 여부도 확인하지 못함 | 높음 |
-| **대회 제공물이 공개 저장소의 과거 이력에 남아 있음** | 2026-10-12에 v2 브랜치 팁에서 제공물 27개 파일(baseline `script.py`·`patched_script.py`, `df_arena_1b/` 소스, `htdemucs`·`panns` 설정, `data/test/`·`sample_submission.csv`, `deepvoice_competition_summary.md` 등)의 추적을 해제하고 `.gitignore`에 등록함. 그러나 원격 `Yewon-choi-44/Deep-voice`는 **공개 저장소**(비인증 API HTTP 200)이고, 같은 파일들이 이미 `origin/v1`·`origin/master`·`origin/chore/cuda-env-and-musiccaps-pipeline`의 이력에 있으며 `deepvoice_competition.md`(대회 규정 원문)도 이력에 남아 있음(팁에서는 추적 제거됨). 이력에서 지우려면 history rewrite와 force-push가 필요해 하지 않았음 | 높음 (결정 대기) |
+| 학습 데이터셋 라이선스 미확인 | FakeMusicCaps(CC-BY-NC-4.0), mtg-jamendo 등을 대회 규칙 기준으로 학습에 써도 되는지는 대회 중 끝내 확인하지 못함. 데이터 자체는 저장소에 포함하지 않으므로 재배포 문제는 없음 | 낮음 |
+| ~~대회 제공물 재배포 가능 여부~~ | **해결(10-12).** 저장소 소유자 확인: baseline 코드·모델 소스·더미 데이터는 대회 홈페이지에 공개된 자료라 재배포에 문제 없음. 팁에서 제외했던 것을 취소하고 모두 되돌림 (결정 기록 참고) | — |
 | ~~`music_classifier`가 DF-Arena zero-shot보다 실제로 더 나쁨~~ | **해결됨(09-28)** — 09-20(순수 baseline) 총점 0.6909, 09-21(`music_classifier` 1차, 좁은 데이터) 총점 0.6722로 한때 baseline보다 열등했으나, 데이터 확대(학습 150→2,550~2,700)+`ReduceLROnPlateau`/patience 10 재학습 후 이번 제출에서 총점 **0.70871**로 처음 baseline을 돌파함. Real 150개/Fake 5종뿐이던 좁은 데이터가 원인이었다는 진단이 맞았던 것으로 확정 | — |
 | ~~Fake 데이터가 현재 학습 규모의 병목~~ | **전제가 틀렸음(10-12).** Fake를 늘려도 고유 오디오가 5,521개(전부 MusicGen_medium)에서 더 늘지 않음 — 위 첫 행으로 대체 | — |
 | GPU 활용률 저조 | 학습 중 VRAM은 15.8/16GB 점유되나 GPU 사용률 1% — CPU 쪽 오디오 전처리(멜스펙트로그램 계산)가 병목으로 추정(미검증), 개선 시 학습 속도 향상 가능. 4차 재학습은 epoch당 평균 2,324초로 오래 걸렸음 | 낮음 |
